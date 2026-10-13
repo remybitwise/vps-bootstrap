@@ -71,8 +71,11 @@ bash manage.sh
 
 An interactive menu: add/remove a client (Reality/naive/qWDTT
 independently of each other), Psiphon status and exit IP/region changes,
-status and restart of sing-box/caddy-naive/wdtt. `bootstrap.sh` deploys
-the stack from scratch; it doesn't handle day-to-day management.
+status and restart of sing-box/caddy-naive/wdtt, and updating
+sing-box/Caddy/qWDTT/Psiphon to their latest versions without re-running
+`bootstrap.sh` (so no firewall/fail2ban/nginx changes along the way).
+`bootstrap.sh` deploys the stack from scratch; it doesn't handle
+day-to-day management.
 
 ## How it all fits together
 

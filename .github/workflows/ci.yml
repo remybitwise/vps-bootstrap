@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -34,7 +34,7 @@ jobs:
             python3 -c "import ast; ast.parse(open('$f').read())" || exit 1
           done
 
-      - name: JSON templates parse
+      - name: Validate JSON templates
         run: python3 -m json.tool psiphon.config > /dev/null
 
   deploy-test:
@@ -57,7 +57,7 @@ jobs:
       - name: Smoke-test real client connections
         run: sudo -E bash .github/scripts/smoke-test.sh
 
-      - name: Functional test manage.sh (add/remove client, Psiphon status, service restart)
+      - name: Functional-test manage.sh end to end
         run: sudo -E bash .github/scripts/manage-functional-test.sh
 
       - name: Dump service logs on failure
