@@ -3,8 +3,6 @@
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
 [![Dependency bump check](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml)
 
-`bootstrap.sh` sets up on a clean Ubuntu VPS:
-
 - **sing-box** — VLESS+Reality (disguised as a plain HTTPS site,
   "selfsteal": invalid connections are transparently forwarded to a real
   site) + built-in **naive** — a second, independent path, a regular
