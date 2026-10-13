@@ -465,6 +465,20 @@ egress_region() {
   python3 -c "import json; print(json.load(open('$PSIPHON_CONFIG')).get('EgressRegion', '?'))" 2>/dev/null || echo "?"
 }
 
+google_route() {
+  # Reads the live sing-box config rather than watchdog.state's
+  # via_direct flag — shows what's actually routing traffic right now,
+  # regardless of how it got that way.
+  python3 -c "
+import json
+d = json.load(open('$SING_BOX_CONFIG'))
+for r in d['route']['rules']:
+    if r.get('rule_set') == ['google-geosite', 'google-geoip']:
+        print(r.get('outbound', '?'))
+        break
+" 2>/dev/null || echo "?"
+}
+
 psiphon_wait_up() {
   local port="$1"
   for _ in $(seq 1 12); do
@@ -510,6 +524,7 @@ psiphon_status() {
   echo "=== Psiphon ==="
   echo "Requested region (psiphon.config): $(egress_region)"
   echo "Service active: $(systemctl is-active psiphon 2>/dev/null)"
+  echo "Google traffic currently routed via: $(google_route)"
   echo
   echo "Current verdict (live check):"
   psiphon_verdict "$port"

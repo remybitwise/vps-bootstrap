@@ -31,6 +31,16 @@
 #     once a tunnel gets old, regardless of any check passing — bounds
 #     exposure to a stale verdict in some other Google database that
 #     nothing above can read.
+#
+# Direct-VPS fallback: a single region failing proves nothing about
+# Psiphon as a whole, so this needs REGION_SWEEPS_BEFORE_DIRECT full
+# passes through REGION_POOL — every region tried and rotated away from
+# in a row — before Google traffic gets routed directly from this VPS's
+# own IP instead (via singbox-google-route). Switches back the moment one
+# region checks clean twice in a row (region_cycle_fails/via_direct/
+# clean_streak in watchdog.state). psiphon.service's OnFailure= also
+# fires this watchdog immediately on an actual crash, not just on the
+# timer — see psiphon.service.
 set -uo pipefail
 
 . /etc/default/psiphon-watchdog
@@ -43,9 +53,23 @@ S=(--socks5-hostname "127.0.0.1:${SOCKS_PORT}")
 log() { printf '%s %s\n' "$(date -Is)" "$*" >> "$LOG"; }
 
 fails=0; last_gemini=0; gemini_tunnel=""; captcha=0
+# region_cycle_fails: consecutive ROTATIONS (not checks) that ended in
+# failure — reset by any clean check, incremented each time this run
+# rotates to the next region. via_direct: are we currently routing
+# Google traffic directly from this VPS instead of through Psiphon.
+# clean_streak: consecutive clean checks while via_direct=1, counted
+# toward switching back — see the REGION_SWEEPS_BEFORE_DIRECT comment in
+# /etc/default/psiphon-watchdog for why a single region failing (or
+# recovering) isn't enough on its own.
+region_cycle_fails=0; via_direct=0; clean_streak=0
 # shellcheck disable=SC1090
 [ -r "$STATE" ] && . "$STATE"
 now=$(date +%s)
+
+# shellcheck disable=SC2206
+pool=(${REGION_POOL:-})
+pool_size=${#pool[@]}
+[ "$pool_size" -eq 0 ] && pool_size=1   # no pool configured — still a single region to exhaust
 
 # The tunnel this check is about — systemd instead of docker inspect.
 started="$(systemctl show psiphon -p ActiveEnterTimestamp --value 2>/dev/null)"
@@ -117,6 +141,9 @@ fails=0
 last_gemini=$last_gemini
 gemini_tunnel=''
 captcha=0
+region_cycle_fails=$region_cycle_fails
+via_direct=$via_direct
+clean_streak=$clean_streak
 EOF
     exit 0
   fi
@@ -171,6 +198,20 @@ fi
 if [ -z "$reason" ]; then
   [ "$fails" -gt 0 ] && log "recovered (exit $(curl -s --max-time 15 "${S[@]}" https://api.ipify.org 2>/dev/null), country ${ads_cc:-?})"
   fails=0
+  # A clean check proves this region attempt is fine — breaks any losing
+  # streak, regardless of whether we're currently on direct.
+  region_cycle_fails=0
+  if [ "$via_direct" = "1" ]; then
+    clean_streak=$(( clean_streak + 1 ))
+    if [ "$clean_streak" -ge 2 ]; then
+      log "2 clean checks in a row on this region — switching Google traffic back to Psiphon"
+      /usr/local/sbin/singbox-google-route psiphon >> "$LOG" 2>&1
+      via_direct=0
+      clean_streak=0
+    else
+      log "clean check ($clean_streak/2) while on the direct fallback — one more needed before switching back"
+    fi
+  fi
 else
   fails=$(( fails + 1 ))
 fi
@@ -184,6 +225,16 @@ if [ "$fails" -ge "${FAIL_THRESHOLD:-2}" ] || [ "$decisive" = 1 ]; then
   [ -n "$moved" ] && log "region $moved"
   systemctl restart psiphon
   fails=0
+  clean_streak=0
+  region_cycle_fails=$(( region_cycle_fails + 1 ))
+
+  sweep_threshold=$(( ${REGION_SWEEPS_BEFORE_DIRECT:-0} * pool_size ))
+  if [ "${REGION_SWEEPS_BEFORE_DIRECT:-0}" -gt 0 ] && [ "$via_direct" = "0" ] \
+     && [ "$region_cycle_fails" -ge "$sweep_threshold" ]; then
+    log "$region_cycle_fails failed rotations (${REGION_SWEEPS_BEFORE_DIRECT} full pass(es) of $pool_size region(s)) — Psiphon isn't recovering, routing Google traffic directly from this VPS until it does"
+    /usr/local/sbin/singbox-google-route direct >> "$LOG" 2>&1
+    via_direct=1
+  fi
 fi
 
 cat > "$STATE" <<EOF
@@ -191,4 +242,7 @@ fails=$fails
 last_gemini=$last_gemini
 gemini_tunnel='$gemini_tunnel'
 captcha=$captcha
+region_cycle_fails=$region_cycle_fails
+via_direct=$via_direct
+clean_streak=$clean_streak
 EOF

@@ -63,10 +63,13 @@ jobs:
       - name: Functional-test manage.sh end to end
         run: sudo -E bash .github/scripts/manage-functional-test.sh
 
+      - name: Test Google direct-fallback failover
+        run: sudo -E bash .github/scripts/failover-test.sh
+
       - name: Dump service logs on failure
         if: failure()
         run: |
-          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fail2ban; do
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.service psiphon-watchdog.timer ufw fail2ban; do
             echo "::group::journalctl -u $svc"
             sudo journalctl -u "$svc" --no-pager -n 100 || true
             echo "::endgroup::"

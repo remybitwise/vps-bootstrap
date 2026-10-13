@@ -50,6 +50,16 @@ FAIL_THRESHOLD=2
 # No rotation cooldown: it could only delay a rotation, never prevent one,
 # and the exit it would protect is already known bad.
 
+# How many full passes through REGION_POOL — every region tried and
+# failed — before giving up on Psiphon entirely and routing Google
+# traffic directly from this VPS's own IP instead. A single region
+# failing proves nothing about Psiphon as a whole; this makes sure it's
+# not just one bad exit before taking the (temporary, worse) fallback.
+# Switches back the moment one region checks clean twice in a row — see
+# psiphon-watchdog.sh. 0 disables the fallback entirely (stay
+# Psiphon-only, matching the old behavior).
+REGION_SWEEPS_BEFORE_DIRECT=2
+
 # Seconds after a (re)start during which the throughput gate is skipped —
 # must be longer than the check interval (10 min) or it never applies.
 THROUGHPUT_GRACE_SEC=900

@@ -493,7 +493,9 @@ log "10/12 — Psiphon watchdog"
 cp "$REPO_DIR/psiphon-watchdog.sh" /usr/local/sbin/psiphon-watchdog
 cp "$REPO_DIR/psiphon-advance-region.sh" /usr/local/sbin/psiphon-advance-region
 cp "$REPO_DIR/psiphon-gemini-check.sh" /usr/local/sbin/psiphon-gemini-check
-chmod 755 /usr/local/sbin/psiphon-watchdog /usr/local/sbin/psiphon-advance-region /usr/local/sbin/psiphon-gemini-check
+cp "$REPO_DIR/singbox-google-route.sh" /usr/local/sbin/singbox-google-route
+chmod 755 /usr/local/sbin/psiphon-watchdog /usr/local/sbin/psiphon-advance-region \
+  /usr/local/sbin/psiphon-gemini-check /usr/local/sbin/singbox-google-route
 
 # Always a fresh template, but EGRESS_REGION and MIN_THROUGHPUT_KBPS are
 # kept from the already-live file, if there was one — the first one moves

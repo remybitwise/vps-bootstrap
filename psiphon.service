@@ -2,6 +2,11 @@
 Description=Psiphon egress tunnel (native, no Docker) — used for Google-geolocation-sensitive traffic
 After=network.target network-online.target
 Wants=network-online.target
+# Fires the watchdog the instant this crashes, not just on its regular
+# timer — a deliberate `systemctl restart psiphon` (the watchdog's own
+# rotation) is a clean stop+start and never reaches "failed", so this
+# can't trigger itself in a loop.
+OnFailure=psiphon-watchdog.service
 
 [Service]
 Type=simple
