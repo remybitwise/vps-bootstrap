@@ -54,9 +54,14 @@ naive_client = {
     "outbounds": [{
         "type": "naive", "tag": "out", "server": "127.0.0.1", "server_port": 443,
         "username": client_name, "password": env[f"CLIENT_{client_name}_NAIVE_PASS"],
-        # insecure: CI's cert is self-signed (SKIP_CERTBOT=1), a real
-        # deployment has a real Let's Encrypt cert and never sets this.
-        "tls": {"enabled": True, "server_name": domain, "insecure": True},
+        # naive's outbound TLS rejects the generic "insecure" flag, so the
+        # self-signed CI cert (SKIP_CERTBOT=1) is trusted explicitly here
+        # instead. A real deployment has a real Let's Encrypt cert and
+        # never sets certificate_path.
+        "tls": {
+            "enabled": True, "server_name": domain,
+            "certificate_path": f"/etc/letsencrypt/live/{domain}/fullchain.pem",
+        },
     }],
     "route": {"final": "out"},
 }
