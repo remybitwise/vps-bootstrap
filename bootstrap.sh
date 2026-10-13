@@ -5,41 +5,72 @@
 # watchdog, firewall, base kernel hardening, fail2ban. Details — README.md
 # next to this file.
 #
-# SSH key setup and hardening (port change, password login off) are
-# deliberately not here — see SSH-HARDENING.md. That step is easy to do by
-# hand with a check in a separate session, and easy to break beyond
-# recovery with automation and no human watching. Run this script only
-# once SSH by key on the right port already works.
+# Deliberately not in here: SSH key setup/hardening (see SSH-HARDENING.md
+# — needs a human watching a second session, easy to break beyond
+# recovery otherwise) and adding any clients (see manage.sh — this script
+# only ever stands up the infrastructure, with nobody authorized to use
+# it yet; add the first person with manage.sh once this finishes).
 #
-# The script can be re-run — it brings every binary and config up to date,
-# but doesn't touch what can't be regenerated: client secrets, the current
-# Psiphon region (the watchdog's rotation moves it), and the
-# MIN_THROUGHPUT_KBPS calibration if it's no longer the default.
-#
-# Not run end to end a second time on an already-configured server —
-# testing that on the production box this script exists to recover is not
-# a risk worth taking. Each block on its own is a command already run
-# live; stringing them together in this exact order hasn't been. Watch the
-# output at every step on a first run against a new machine.
+# Every value below comes only from an env var, or — missing that — from
+# whatever this VPS is already running. Never from an interactive
+# prompt: a human-friendly first run belongs in install.sh, which asks
+# what it needs and then calls this script with everything resolved.
+# This one stays a plain, predictable function of its inputs, so a
+# re-run (update) on an already-configured server needs none of them
+# spelled out again.
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 # =========================================================================
-# CONFIG — fill in before running (or export as env vars)
+# CONFIG
 # =========================================================================
 
+SING_BOX_CONFIG_PATH=/etc/sing-box/config.json
+PSIPHON_CONFIG_PATH=/etc/psiphon/psiphon.config
+
+if [ -z "${DOMAIN:-}" ] && [ -f "$SING_BOX_CONFIG_PATH" ]; then
+  # Reads back what this script itself wrote last time, matched by tag
+  # rather than inbound position — so reordering inbounds later can't
+  # silently break this.
+  DOMAIN="$(python3 -c "
+import json
+d = json.load(open('$SING_BOX_CONFIG_PATH'))
+for i in d['inbounds']:
+    if i['tag'] == 'vless-reality-in':
+        print(i['tls']['server_name'])
+        break
+" 2>/dev/null || true)"
+fi
 DOMAIN="${DOMAIN:?set DOMAIN=your.domain (its A record must already point at this VPS)}"
-EMAIL="${EMAIL:?set EMAIL=your@email (used only for issuing the certificate)}"
+
+if [ -z "${SSH_PORT:-}" ]; then
+  # What sshd actually listens on right now — set up by hand per
+  # SSH-HARDENING.md before this script ever runs. Reading the live
+  # process rather than parsing sshd_config text: a config with no
+  # explicit Port line (meaning the default, 22) would otherwise look
+  # like nothing is configured at all, when the real answer is "22".
+  SSH_PORT="$(ss -tlnp 2>/dev/null | grep sshd \
+    | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+|\[.*\]:[0-9]+' \
+    | grep -oE '[0-9]+$' | sort -u | head -1)"
+fi
 SSH_PORT="${SSH_PORT:?set SSH_PORT=number (the one already configured in sshd_config)}"
+
+if [ -z "${PSIPHON_EGRESS_REGION:-}" ] && [ -f "$PSIPHON_CONFIG_PATH" ]; then
+  # The watchdog's own rotation can move this — read the live value
+  # rather than rolling it back to whatever was passed before.
+  PSIPHON_EGRESS_REGION="$(python3 -c "import json; print(json.load(open('$PSIPHON_CONFIG_PATH')).get('EgressRegion',''))" 2>/dev/null || true)"
+fi
 PSIPHON_EGRESS_REGION="${PSIPHON_EGRESS_REGION:?set PSIPHON_EGRESS_REGION=NL (two-letter code; Psiphon itself prints the full list to its log on first run, AvailableEgressRegions)}"
 
-# Client names — each gets its own Reality UUID and naive login/password.
-# The default below is just a single-client placeholder; pass your own via
-# CLIENT_NAMES="name1 name2 name3" (space separated, any names).
-# export is required: the python helpers below read this from os.environ,
-# which only sees what's actually exported, not any bash variable.
-export CLIENT_NAMES="${CLIENT_NAMES:-client1}"
+# EMAIL is only ever used to issue a *new* certificate — nothing reads it
+# back, so there's nothing to detect. Required only when we're actually
+# about to call real certbot (not SKIP_CERTBOT, and no cert yet for
+# DOMAIN); a re-run with an existing cert needs it even less than the
+# others above.
+if [ "${SKIP_CERTBOT:-0}" != "1" ] && [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
+  EMAIL="${EMAIL:?set EMAIL=your@email (used only for issuing the certificate)}"
+fi
 
 WDTT_DTLS_PORT="${WDTT_DTLS_PORT:-48219}"
 WDTT_WG_PORT="${WDTT_WG_PORT:-48220}"
@@ -58,8 +89,8 @@ apt-get update -qq
 
 # =========================================================================
 # 0. sing-box binary (always to the latest version — safe: apt .deb, then
-#    an explicit restart below) + secrets (generate once, read after —
-#    a re-run never touches them, whatever binaries/configs changed above)
+#    an explicit restart below) + server-wide Reality keys (generated
+#    once, read after — a re-run never touches them)
 # =========================================================================
 
 log "updating sing-box to the latest version"
@@ -70,7 +101,7 @@ if [ -f "$SECRETS_FILE" ]; then
   # shellcheck disable=SC1090
   . "$SECRETS_FILE"
 else
-  log "First run — generating secrets"
+  log "First run — generating Reality keys"
   REALITY_KEYS="$(sing-box generate reality-keypair)"
   REALITY_PRIVATE_KEY="$(echo "$REALITY_KEYS" | grep PrivateKey | awk '{print $2}')"
   REALITY_PUBLIC_KEY="$(echo "$REALITY_KEYS" | grep PublicKey | awk '{print $2}')"
@@ -81,14 +112,6 @@ else
     echo "REALITY_PUBLIC_KEY=$REALITY_PUBLIC_KEY"
     echo "SHORT_ID=$SHORT_ID"
   } > "$SECRETS_FILE"
-
-  for name in $CLIENT_NAMES; do
-    uuid="$(sing-box generate uuid)"
-    pass="$(openssl rand -base64 24)"
-    echo "CLIENT_${name}_UUID=$uuid" >> "$SECRETS_FILE"
-    echo "CLIENT_${name}_NAIVE_PASS=$pass" >> "$SECRETS_FILE"
-  done
-
   chmod 600 "$SECRETS_FILE"
   # shellcheck disable=SC1090
   . "$SECRETS_FILE"
@@ -144,6 +167,20 @@ else
   log "certificate for ${DOMAIN} already exists, skipping issuance"
 fi
 
+# A deliberate domain change leaves the old certificate behind, otherwise
+# unnoticed — never deleted automatically (Let's Encrypt only allows 5
+# issuances per domain per week, so an automatic delete could cost a
+# real retry later if the change ever gets reverted), just pointed out.
+if [ -d /etc/letsencrypt/live ]; then
+  for cert_dir in /etc/letsencrypt/live/*/; do
+    cert_name="$(basename "$cert_dir")"
+    if [ "$cert_name" != "$DOMAIN" ]; then
+      echo "NOTE: found a certificate for '${cert_name}', no longer matching DOMAIN=${DOMAIN}."
+      echo "      If you're done with it: certbot delete --cert-name ${cert_name}"
+    fi
+  done
+fi
+
 # =========================================================================
 # 5. Caddy for naive
 # =========================================================================
@@ -179,8 +216,11 @@ sed "s/REPLACE_WITH_YOUR_NAIVE_DOMAIN/${DOMAIN}/g" "$REPO_DIR/decoy-site/index.h
 # "matcher is defined more than once"). Generator lives in
 # regen-caddyfile.py; manage.sh keeps its own copy of the same logic (it's
 # self-contained, no external files), but it doesn't exist yet on a first
-# deployment, hence the separate call here.
-python3 "$REPO_DIR/regen-caddyfile.py" "$DOMAIN" "$SECRETS_FILE" /etc/caddy/Caddyfile
+# deployment, hence the separate call here. Reads naive credentials
+# straight out of sing-box's own config (see step 6 below for why that's
+# the one source of truth for clients now), so it always matches exactly
+# who sing-box will actually accept, first run or re-run alike.
+python3 "$REPO_DIR/regen-caddyfile.py" "$DOMAIN" "$SING_BOX_CONFIG_PATH" /etc/caddy/Caddyfile
 
 chown -R caddy:caddy /etc/caddy
 chmod 600 /etc/caddy/Caddyfile
@@ -208,10 +248,10 @@ log "6/12 — sing-box config"
 id sing-box >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin sing-box
 mkdir -p /etc/sing-box /var/log/sing-box
 
-python3 - "$DOMAIN" "$SECRETS_FILE" "$WDTT_TPROXY_PORT" <<'PYEOF'
-import json, os, sys
+python3 - "$DOMAIN" "$SECRETS_FILE" "$WDTT_TPROXY_PORT" "$SING_BOX_CONFIG_PATH" <<'PYEOF'
+import json, sys
 
-domain, secrets_file, tproxy_port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+domain, secrets_file, tproxy_port, config_path = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 
 env = {}
 with open(secrets_file) as f:
@@ -222,16 +262,21 @@ with open(secrets_file) as f:
         k, v = line.split("=", 1)
         env[k] = v
 
-client_names = os.environ["CLIENT_NAMES"].split()
-
-vless_users = [
-    {"name": n, "uuid": env[f"CLIENT_{n}_UUID"], "flow": "xtls-rprx-vision"}
-    for n in client_names
-]
-naive_users = [
-    {"username": n, "password": env[f"CLIENT_{n}_NAIVE_PASS"]}
-    for n in client_names
-]
+# Clients are managed exclusively through manage.sh, never here — a
+# re-run carries the existing user lists forward untouched instead of
+# rebuilding them from any name list, so this script never needs to
+# know who they are. A first run (no config yet) starts both empty:
+# nobody is authorized until manage.sh adds them.
+vless_users, naive_users = [], []
+try:
+    old = json.load(open(config_path))
+    for i in old.get("inbounds", []):
+        if i.get("tag") == "vless-reality-in":
+            vless_users = i.get("users", [])
+        elif i.get("tag") == "naive-in":
+            naive_users = i.get("users", [])
+except FileNotFoundError:
+    pass
 
 config = {
     "log": {"level": "warn", "output": "/var/log/sing-box/box.log", "timestamp": True},
@@ -300,8 +345,8 @@ config = {
     },
 }
 
-json.dump(config, open("/etc/sing-box/config.json", "w"), indent=2)
-print("sing-box config.json written")
+json.dump(config, open(config_path, "w"), indent=2)
+print(f"sing-box config.json written ({len(vless_users)} Reality, {len(naive_users)} naive user(s) carried forward)")
 PYEOF
 
 chown -R sing-box:sing-box /etc/sing-box /var/log/sing-box
@@ -397,38 +442,18 @@ id wdtt >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/n
 mkdir -p /etc/wdtt
 
 if [ ! -f /etc/wdtt/passwords.json ]; then
-  python3 - <<PYEOF
-import json, os, secrets, string
-
-alphabet = string.ascii_letters + string.digits
-def genpass(n=23):
-    return "".join(secrets.choice(alphabet) for _ in range(n))
-
-client_names = os.environ["CLIENT_NAMES"].split()
+  python3 -c "
+import json
 db = {
-    "main_password": "",
-    "admin_id": "",
-    "bot_token": "",
-    "passwords": {},
-    "devices": {},
+    'main_password': '',
+    'admin_id': '',
+    'bot_token': '',
+    'passwords': {},
+    'devices': {},
 }
-for name in client_names:
-    db["passwords"][genpass()] = {
-        "label": name,
-        "device_id": "",
-        "device_ids": [],
-        "max_devices": 1,
-        "expires_at": 0,
-        "down_bytes": 0,
-        "up_bytes": 0,
-    }
-
-json.dump(db, open("/etc/wdtt/passwords.json", "w"), indent=2)
-print("passwords.json written — the VK call hash (vk_hash) is not filled in for anyone.")
-print("Create a regular VK group call for each person separately, grab the")
-print("hash from it, and enter it by hand into /etc/wdtt/passwords.json, in")
-print("that person's vk_hash field under passwords{}.")
-PYEOF
+json.dump(db, open('/etc/wdtt/passwords.json', 'w'), indent=2)
+print('passwords.json written, empty — add qWDTT clients with manage.sh.')
+"
 else
   log "/etc/wdtt/passwords.json already exists — leaving it alone (not regenerating client passwords)"
 fi
@@ -464,18 +489,10 @@ curl -fsSL -o /tmp/psiphon-tunnel-core.new \
 chmod 755 /tmp/psiphon-tunnel-core.new
 mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
 
-# Config — always a fresh template, but EgressRegion comes from the
-# already-live file: the watchdog's rotation moves it, and a re-run
-# shouldn't roll it back to whatever was passed in PSIPHON_EGRESS_REGION
-# on the first run.
-CURRENT_EGRESS_REGION="$PSIPHON_EGRESS_REGION"
-if [ -f /etc/psiphon/psiphon.config ]; then
-  CURRENT_EGRESS_REGION="$(python3 -c "
-import json
-print(json.load(open('/etc/psiphon/psiphon.config')).get('EgressRegion', '$PSIPHON_EGRESS_REGION'))
-" 2>/dev/null || echo "$PSIPHON_EGRESS_REGION")"
-fi
-sed "s/REPLACE_WITH_EGRESS_REGION/${CURRENT_EGRESS_REGION}/" \
+# Config — always a fresh template. PSIPHON_EGRESS_REGION was already
+# resolved to the live file's current value above (if there was one),
+# so a re-run can't roll back what the watchdog's rotation has moved.
+sed "s/REPLACE_WITH_EGRESS_REGION/${PSIPHON_EGRESS_REGION}/" \
   "$REPO_DIR/psiphon.config" > /etc/psiphon/psiphon.config
 chown root:psiphon /etc/psiphon/psiphon.config
 chmod 640 /etc/psiphon/psiphon.config
@@ -497,17 +514,16 @@ cp "$REPO_DIR/singbox-google-route.sh" /usr/local/sbin/singbox-google-route
 chmod 755 /usr/local/sbin/psiphon-watchdog /usr/local/sbin/psiphon-advance-region \
   /usr/local/sbin/psiphon-gemini-check /usr/local/sbin/singbox-google-route
 
-# Always a fresh template, but EGRESS_REGION and MIN_THROUGHPUT_KBPS are
-# kept from the already-live file, if there was one — the first one moves
-# with rotation, the second may have been deliberately calibrated for
-# this particular node.
-CURRENT_WD_EGRESS_REGION="$PSIPHON_EGRESS_REGION"
+# Always a fresh template. EGRESS_REGION uses the same already-resolved
+# PSIPHON_EGRESS_REGION as psiphon.config above (they're meant to always
+# match). MIN_THROUGHPUT_KBPS is the one value here with no equivalent
+# upstream to resolve from — kept from the live file if it was ever
+# calibrated away from the template's default.
 CURRENT_MIN_THROUGHPUT=""
 if [ -f /etc/default/psiphon-watchdog ]; then
-  CURRENT_WD_EGRESS_REGION="$(grep -oE '^EGRESS_REGION=.*' /etc/default/psiphon-watchdog | cut -d= -f2)"
   CURRENT_MIN_THROUGHPUT="$(grep -oE '^MIN_THROUGHPUT_KBPS=.*' /etc/default/psiphon-watchdog | cut -d= -f2)"
 fi
-sed "s/^EGRESS_REGION=.*/EGRESS_REGION=${CURRENT_WD_EGRESS_REGION}/" \
+sed "s/^EGRESS_REGION=.*/EGRESS_REGION=${PSIPHON_EGRESS_REGION}/" \
   "$REPO_DIR/psiphon-watchdog.default" > /etc/default/psiphon-watchdog
 [ -n "$CURRENT_MIN_THROUGHPUT" ] && \
   sed -i "s/^MIN_THROUGHPUT_KBPS=.*/MIN_THROUGHPUT_KBPS=${CURRENT_MIN_THROUGHPUT}/" /etc/default/psiphon-watchdog
@@ -529,7 +545,7 @@ bash "$tmp_f2b"
 rm -f "$tmp_f2b"
 
 # =========================================================================
-# 12. Check and print client data
+# 12. Check
 # =========================================================================
 
 log "12/12 — check"
@@ -545,81 +561,10 @@ for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fa
 done
 
 echo
-echo "=== Reality/naive — client outbound configs (JSON) ==="
-python3 - "$DOMAIN" "$SECRETS_FILE" <<'PYEOF'
-import json, os, sys
-
-domain, secrets_file = sys.argv[1], sys.argv[2]
-env = {}
-with open(secrets_file) as f:
-    for line in f:
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        env[k] = v
-
-for name in os.environ["CLIENT_NAMES"].split():
-    uuid = env[f"CLIENT_{name}_UUID"]
-    naive_pass = env[f"CLIENT_{name}_NAIVE_PASS"]
-    config = {
-        "outbounds": [
-            {
-                "type": "vless",
-                "tag": "reality-out",
-                "server": domain,
-                "server_port": 443,
-                "uuid": uuid,
-                "flow": "xtls-rprx-vision",
-                "tls": {
-                    "enabled": True,
-                    "server_name": domain,
-                    "utls": {"enabled": True, "fingerprint": "chrome"},
-                    "reality": {
-                        "enabled": True,
-                        "public_key": env["REALITY_PUBLIC_KEY"],
-                        "short_id": env["SHORT_ID"],
-                    },
-                },
-                "tcp_fast_open": True,
-                "disable_tcp_keep_alive": True,
-            },
-            {
-                "type": "naive",
-                "tag": "naive-out",
-                "server": domain,
-                "server_port": 443,
-                "username": name,
-                "password": naive_pass,
-                "tls": {"enabled": True, "server_name": domain},
-                "tcp_fast_open": True,
-                "disable_tcp_keep_alive": True,
-            },
-        ]
-    }
-    link = (f"vless://{uuid}@{domain}:443?encryption=none&security=reality&sni={domain}"
-            f"&fp=chrome&pbk={env['REALITY_PUBLIC_KEY']}&sid={env['SHORT_ID']}"
-            f"&type=tcp&flow=xtls-rprx-vision#{name}-reality")
-    print(f"\n--- {name} ---")
-    print(link)
-    print(f"naive: username={name} password={naive_pass}")
-    print(json.dumps(config, indent=2))
-PYEOF
-
-echo
 echo "=== Managing clients, Psiphon, services ==="
 echo "bash $REPO_DIR/manage.sh — interactive menu (add/remove a client,"
 echo "change Psiphon's exit IP/region, status and restart of services)."
-
-echo
-echo "=== qWDTT — passwords (no vk_hash, enter the call links by hand) ==="
-python3 -c "
-import json
-d = json.load(open('/etc/wdtt/passwords.json'))
-for pw, entry in d['passwords'].items():
-    print(f\"{entry['label']}: pass={pw}\")
-"
-echo "  peer=<server IP>:${WDTT_DTLS_PORT}, wg-port=${WDTT_WG_PORT}"
+echo "No clients are authorized yet on a first run — add the first one there."
 
 echo
 if [ "$all_ok" = "1" ]; then

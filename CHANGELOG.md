@@ -11,6 +11,37 @@ misread state. **MINOR** for anything new that's backward compatible.
 `/etc/vps-bootstrap-version` on a deployed server records which version
 is actually running there, written by `bootstrap.sh` on a successful run.
 
+## [2.0.0] - 2026-10-14
+
+**BREAKING:** `bootstrap.sh` no longer creates any clients. A first run
+now stands up the infrastructure with nobody authorized to use it yet —
+add the first person with `manage.sh`, same as any client after that.
+Anyone relying on the old `CLIENT_NAMES` env var or the client
+links/configs `bootstrap.sh` used to print at the end needs to switch to
+`manage.sh` for that.
+
+- `CLIENT_NAMES` is gone. The sing-box config regeneration carries
+  forward whatever clients are already in the live config instead of
+  rebuilding the user lists from a name list — a re-run can no longer
+  `KeyError` on a client that only has one of Reality/naive (manage.sh
+  already allowed that; the old per-name rebuild didn't handle it).
+  `regen-caddyfile.py` now reads naive credentials from sing-box's own
+  config too, matching `manage.sh`'s copy of the same logic exactly
+  instead of a separate secrets-file-based path.
+- No more interactive prompts anywhere in `bootstrap.sh` — every value
+  resolves from an env var, or this VPS's own already-deployed state, or
+  a hard failure.
+- `DOMAIN` auto-detection now matches sing-box's `vless-reality-in` tag
+  instead of assuming it's the first inbound in the list.
+- `SSH_PORT` auto-detection now reads the actually-listening sshd
+  process (`ss`) instead of parsing `sshd_config` text — fixes both the
+  multiple-`Port`-lines case and the no-`Port`-line-at-all case (which
+  means the default, 22, not "undetectable").
+- A domain change (rare, deliberate — passing a different `DOMAIN` on a
+  re-run) now prints a reminder about the old certificate left behind,
+  with the exact `certbot delete --cert-name` to remove it by hand.
+  Never deleted automatically.
+
 ## [1.1.0] - 2026-10-14
 
 - **Google direct-fallback failover.** If Psiphon can't recover — every

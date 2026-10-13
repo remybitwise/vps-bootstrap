@@ -35,7 +35,14 @@ deployed_version() {
 }
 
 domain() {
-  python3 -c "import json; print(json.load(open('$SING_BOX_CONFIG'))['inbounds'][0]['tls']['server_name'])" 2>/dev/null || echo "?"
+  python3 -c "
+import json
+d = json.load(open('$SING_BOX_CONFIG'))
+for i in d['inbounds']:
+    if i['tag'] == 'vless-reality-in':
+        print(i['tls']['server_name'])
+        break
+" 2>/dev/null || echo "?"
 }
 
 # =========================================================================

@@ -37,28 +37,31 @@ Ubuntu VPS:
 ```bash
 DOMAIN=your.domain \
 EMAIL=your@email \
-SSH_PORT=your_ssh_port \
 PSIPHON_EGRESS_REGION=NL \
 bash bootstrap.sh
 ```
 
-Optional (sensible defaults exist):
-- `CLIENT_NAMES="alice bob carol"` — names of people, each gets their own
-  Reality UUID and naive login/password, space separated. Defaults to one
-  client, `client1`.
+`SSH_PORT` isn't listed above — it's read straight off whatever sshd is
+actually listening on, set up by hand per `SSH-HARDENING.md` before this
+ever runs. Set it explicitly only if you need to override that for some
+reason. `bootstrap.sh` never prompts for anything itself, so it stays
+predictable on a re-run.
+
+Optional:
 - `WDTT_DTLS_PORT` / `WDTT_WG_PORT` / `WDTT_TPROXY_PORT` — qWDTT ports,
   default `48219` / `48220` / `12345` (not the tool's default ports
   56000/56001 — those are the first thing mass scanning checks).
-- `PSIPHON_EGRESS_REGION` — exit country code (`NL`, `DE`, `FR`...).
-  Psiphon itself prints the real list of available regions to its log
-  (`AvailableEgressRegions`) on first run — if the code turns out to be
-  unavailable, just change the region and restart.
 
-At the end the script prints `vless://` links, naive credentials, and
-qWDTT passwords for every client. **The script does not generate the VK
-call hash for qWDTT** — that's a link to a real VK group video call,
-created by hand for each person, with the hash from it entered into
-`/etc/wdtt/passwords.json`.
+This stands up the infrastructure with **nobody authorized to use it
+yet** — no Reality/naive/qWDTT clients. Add the first person with
+`manage.sh` once it finishes.
+
+Every value here (`DOMAIN`, `SSH_PORT`, `PSIPHON_EGRESS_REGION`) comes
+from an env var if you set one, or from whatever this VPS is already
+running if you don't — never from an interactive prompt; a genuinely
+first-time, nothing-set-up-yet run needs them spelled out (as above),
+anything after that needs none of them repeated, see "Re-running"
+below.
 
 ## Managing the server after setup
 
@@ -110,21 +113,35 @@ without reinstalling anything.
 
 ## Re-running updates everything to current
 
-`bootstrap.sh` can be re-run — it pulls the latest versions of
+`bootstrap.sh` can be re-run with **no variables at all** on an
+already-configured server — it pulls the latest versions of
 sing-box/Caddy/qWDTT/Psiphon and fresh configs/units, but doesn't touch
 what can't be regenerated:
 
-- **Client secrets** (Reality UUIDs, naive passwords — in
-  `/root/.vps-bootstrap-secrets.env`; qWDTT passwords — in
-  `/etc/wdtt/passwords.json`) are generated once, read only after that.
-  Links already handed to clients keep working.
-- **Psiphon's region** — the watchdog's rotation can move it; a re-run
-  reads the current value from the live `psiphon.config` and
-  `/etc/default/psiphon-watchdog` instead of rolling it back to whatever
-  was passed in `PSIPHON_EGRESS_REGION` on the first run.
+- **`DOMAIN`** — read back from sing-box's own config (matched by its
+  `vless-reality-in` tag).
+- **`SSH_PORT`** — read from whatever sshd is actually listening on.
+- **`PSIPHON_EGRESS_REGION`** — the watchdog's rotation can move it; a
+  re-run reads the current value from the live `psiphon.config` instead
+  of rolling it back to whatever was passed on the first run.
+- **`EMAIL`** — not needed at all once a certificate already exists.
+- **Clients** — `bootstrap.sh` never creates or names them (that's
+  `manage.sh`'s job, always); a re-run carries forward exactly whoever
+  is already in sing-box's config, untouched. Nothing here to roll back
+  or regenerate.
 - **`MIN_THROUGHPUT_KBPS` calibration** — kept if it's no longer the
   default. Every other variable in `/etc/default/psiphon-watchdog` comes
   from a fresh template each time.
+
+Changing `DOMAIN` on a re-run (a deliberate, rare operation — needs the
+new domain's DNS already pointed here) issues a new certificate and
+leaves the old one behind, unused. It's never deleted automatically
+(Let's Encrypt allows only 5 issuances per domain per week, so an
+automatic delete could cost a real retry if the change ever gets
+reverted) — the script just points it out, with the exact command to
+remove it by hand if you're done with it. Every existing client's
+connection info has the old domain baked in and will need to be handed
+out again with the new one.
 
 Binaries update safely, not over a running process: `caddy-naive`/`wdtt`
 are stopped before being replaced/rebuilt and started again, the Psiphon

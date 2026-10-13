@@ -48,16 +48,66 @@ jobs:
       EMAIL: ci@example.com
       SSH_PORT: "2201"
       PSIPHON_EGRESS_REGION: NL
-      CLIENT_NAMES: citest
       CLIENT_NAME: citest
       SKIP_CERTBOT: "1"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run bootstrap.sh
+      - name: Set up a real sshd listening on SSH_PORT (for live detection)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y openssh-server
+          echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+          sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
+          sleep 1
+          ss -tlnp | grep sshd
+
+      - name: Run bootstrap.sh (stands up infrastructure, no clients yet)
         run: sudo -E bash bootstrap.sh
 
+      - name: Add the test client via manage.sh (bootstrap.sh never creates one)
+        run: printf '2\ncitest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
+
       - name: Smoke-test real client connections
+        run: sudo -E bash .github/scripts/smoke-test.sh
+
+      - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
+        run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo -E bash manage.sh
+
+      - name: Re-run bootstrap.sh with nothing specified (tests auto-detection)
+        run: |
+          secrets_before="$(sudo sha256sum /root/.vps-bootstrap-secrets.env)"
+          sudo -E env -u DOMAIN -u SSH_PORT -u PSIPHON_EGRESS_REGION -u EMAIL bash bootstrap.sh
+          secrets_after="$(sudo sha256sum /root/.vps-bootstrap-secrets.env)"
+          if [ "$secrets_before" != "$secrets_after" ]; then
+            echo "ERROR: server-wide Reality keys changed on a re-run that passed nothing"
+            exit 1
+          fi
+          echo "OK: Reality keys unchanged, re-run worked with zero required variables"
+
+      - name: Confirm clients survived the bare re-run untouched
+        run: |
+          sudo python3 -c "
+          import json, sys
+          d = json.load(open('/etc/sing-box/config.json'))
+          reality = {u['name'] for i in d['inbounds'] if i['tag']=='vless-reality-in' for u in i['users']}
+          naive = {u['username'] for i in d['inbounds'] if i['tag']=='naive-in' for u in i['users']}
+          ok = True
+          if not {'citest', 'asymtest'} <= reality:
+              print('ERROR: citest/asymtest missing from Reality after the bare re-run'); ok = False
+          if 'citest' not in naive:
+              print('ERROR: citest missing from naive after the bare re-run'); ok = False
+          if 'asymtest' in naive:
+              print('ERROR: asymtest (Reality-only) somehow gained a naive secret across the re-run'); ok = False
+          if ok:
+              print('OK: citest (Reality+naive) and asymtest (Reality-only) both survived the re-run exactly as they were')
+          sys.exit(0 if ok else 1)
+          "
+
+      - name: Remove the asymmetric test client
+        run: printf '3\nasymtest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
+
+      - name: Smoke-test real client connections (again, after the bare re-run)
         run: sudo -E bash .github/scripts/smoke-test.sh
 
       - name: Functional-test manage.sh end to end

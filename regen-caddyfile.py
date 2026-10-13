@@ -1,35 +1,31 @@
 #!/usr/bin/env python3
-# regen-caddyfile.py <domain> <secrets_file> <caddyfile_path>
+# regen-caddyfile.py <domain> <sing_box_config> <caddyfile_path>
 # Used only from bootstrap.sh, on first deployment. manage.sh (day-to-day
 # client management on an already-running server) keeps its own
 # independent copy of the same logic — it's self-contained, no external
 # dependencies, see its header.
-# The list of naive clients comes from secrets_file itself (every
-# CLIENT_<name>_NAIVE_PASS=... pair), not the sing-box config: that way the
-# Caddyfile always matches the secrets regardless of who added what there.
+# The list of naive clients comes from sing-box's own config (its
+# naive-in inbound's users) — the one place clients are added or removed
+# (via manage.sh), so the Caddyfile always matches exactly who sing-box
+# will actually accept.
 import base64
+import json
 import re
 import sys
 
-domain, secrets_file, caddyfile_path = sys.argv[1:4]
+domain, sing_box_config, caddyfile_path = sys.argv[1:4]
 
-env = {}
-with open(secrets_file) as f:
-    for line in f:
-        line = line.strip()
-        if not line or "=" not in line:
-            continue
-        k, v = line.split("=", 1)
-        env[k] = v
+# bootstrap.sh calls this before sing-box's own config exists yet on a
+# first run (Caddy is set up one step before sing-box) — no file yet
+# means no naive users yet either, same as any other first-run default.
+try:
+    d = json.load(open(sing_box_config))
+    naive_users = next((i["users"] for i in d["inbounds"] if i["tag"] == "naive-in"), [])
+except FileNotFoundError:
+    naive_users = []
 
-naive_creds = {}
-for k, v in env.items():
-    m = re.match(r"^CLIENT_(.+)_NAIVE_PASS$", k)
-    if m:
-        naive_creds[m.group(1)] = v
-
-if not naive_creds:
-    print("WARNING: no CLIENT_*_NAIVE_PASS entries in secrets_file — Caddyfile will reject everyone")
+if not naive_users:
+    print("WARNING: no naive users in sing-box's config — Caddyfile will reject everyone")
 
 b64_headers = [
     # re.escape: a base64 blob can't contain "+"/"/" when built from
@@ -37,8 +33,8 @@ b64_headers = [
     # to produce those two output symbols), but nothing enforces that on
     # the client name — escaping keeps a stray regex metacharacter in an
     # unusual name from changing what this header_regexp matches.
-    re.escape(base64.b64encode(f"{name}:{pw}".encode()).decode())
-    for name, pw in naive_creds.items()
+    re.escape(base64.b64encode(f"{u['username']}:{u['password']}".encode()).decode())
+    for u in naive_users
 ]
 pattern = "|".join(b64_headers)
 
@@ -76,4 +72,4 @@ caddyfile = f'''{{
 }}
 '''
 open(caddyfile_path, "w").write(caddyfile)
-print("Caddyfile written for:", sorted(naive_creds))
+print("Caddyfile written for:", sorted(u["username"] for u in naive_users))
