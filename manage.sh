@@ -126,7 +126,7 @@ import base64, json, re, sys
 
 domain, config_path, caddyfile_path = sys.argv[1:4]
 d = json.load(open(config_path))
-naive_users = next(i["users"] for i in d["inbounds"] if i["tag"] == "naive-in")
+naive_users = next((i["users"] for i in d["inbounds"] if i["tag"] == "naive-in"), [])
 
 b64_headers = [
     # re.escape: see regen-caddyfile.py for why — same construction, same
@@ -231,8 +231,16 @@ d = json.load(open(config_path))
 for i in d["inbounds"]:
     if do_reality == "1" and i["tag"] == "vless-reality-in":
         i["users"].append({"name": name, "uuid": uuid, "flow": "xtls-rprx-vision"})
-    if do_naive == "1" and i["tag"] == "naive-in":
-        i["users"].append({"username": name, "password": naive_pass})
+if do_naive == "1":
+    # naive-in may not exist yet — see bootstrap.sh for why.
+    naive_in = next((i for i in d["inbounds"] if i["tag"] == "naive-in"), None)
+    if naive_in is None:
+        naive_in = {
+            "type": "naive", "tag": "naive-in", "listen": "127.0.0.1",
+            "listen_port": 1080, "network": "tcp", "users": [],
+        }
+        d["inbounds"].append(naive_in)
+    naive_in["users"].append({"username": name, "password": naive_pass})
 json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
 PYEOF
 
@@ -294,6 +302,8 @@ for i in d["inbounds"]:
         i["users"] = [u for u in i["users"] if u.get("name") != name]
     if do_naive == "1" and i["tag"] == "naive-in":
         i["users"] = [u for u in i["users"] if u.get("username") != name]
+# drop naive-in if that just emptied it (see _do_add_reality_naive)
+d["inbounds"] = [i for i in d["inbounds"] if not (i["tag"] == "naive-in" and not i["users"])]
 json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
 PYEOF
 

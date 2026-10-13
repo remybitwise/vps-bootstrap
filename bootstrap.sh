@@ -278,46 +278,52 @@ try:
 except FileNotFoundError:
     pass
 
+# naive-in only exists once it has users — sing-box refuses an empty
+# naive inbound ("missing users"), unlike vless-reality-in. manage.sh
+# creates/drops it as the first/last naive client comes or goes.
+inbounds = [
+    {
+        "type": "vless",
+        "tag": "vless-reality-in",
+        "listen": "0.0.0.0",
+        "listen_port": 443,
+        "tcp_fast_open": True,
+        "users": vless_users,
+        "tls": {
+            "enabled": True,
+            "server_name": domain,
+            "reality": {
+                "enabled": True,
+                "handshake": {"server": "127.0.0.1", "server_port": 8446},
+                "private_key": env["REALITY_PRIVATE_KEY"],
+                "short_id": [env["SHORT_ID"]],
+            },
+        },
+    },
+]
+if naive_users:
+    inbounds.append({
+        "type": "naive",
+        "tag": "naive-in",
+        "listen": "127.0.0.1",
+        "listen_port": 1080,
+        "network": "tcp",
+        "users": naive_users,
+    })
+inbounds.append({
+    "type": "tproxy",
+    "tag": "wdtt-tproxy-in",
+    "listen": "0.0.0.0",
+    "listen_port": tproxy_port,
+})
+
 config = {
     "log": {"level": "warn", "output": "/var/log/sing-box/box.log", "timestamp": True},
     "dns": {
         "servers": [{"type": "https", "tag": "doh", "server": "1.1.1.1", "server_port": 443}],
         "strategy": "ipv4_only",
     },
-    "inbounds": [
-        {
-            "type": "vless",
-            "tag": "vless-reality-in",
-            "listen": "0.0.0.0",
-            "listen_port": 443,
-            "tcp_fast_open": True,
-            "users": vless_users,
-            "tls": {
-                "enabled": True,
-                "server_name": domain,
-                "reality": {
-                    "enabled": True,
-                    "handshake": {"server": "127.0.0.1", "server_port": 8446},
-                    "private_key": env["REALITY_PRIVATE_KEY"],
-                    "short_id": [env["SHORT_ID"]],
-                },
-            },
-        },
-        {
-            "type": "naive",
-            "tag": "naive-in",
-            "listen": "127.0.0.1",
-            "listen_port": 1080,
-            "network": "tcp",
-            "users": naive_users,
-        },
-        {
-            "type": "tproxy",
-            "tag": "wdtt-tproxy-in",
-            "listen": "0.0.0.0",
-            "listen_port": tproxy_port,
-        },
-    ],
+    "inbounds": inbounds,
     "outbounds": [
         {"type": "direct", "tag": "direct"},
         {"type": "socks", "tag": "psiphon-out", "server": "127.0.0.1", "server_port": 11080},
