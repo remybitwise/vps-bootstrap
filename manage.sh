@@ -110,14 +110,16 @@ ask_yn() {
 regen_caddyfile() {
   local domain_name="$1"
   python3 - "$domain_name" "$SING_BOX_CONFIG" "$CADDYFILE" <<'PYEOF'
-import base64, json, sys
+import base64, json, re, sys
 
 domain, config_path, caddyfile_path = sys.argv[1:4]
 d = json.load(open(config_path))
 naive_users = next(i["users"] for i in d["inbounds"] if i["tag"] == "naive-in")
 
 b64_headers = [
-    base64.b64encode(f"{u['username']}:{u['password']}".encode()).decode()
+    # re.escape: see regen-caddyfile.py for why — same construction, same
+    # one-line defensive escape against an unusual client name.
+    re.escape(base64.b64encode(f"{u['username']}:{u['password']}".encode()).decode())
     for u in naive_users
 ]
 pattern = "|".join(b64_headers)

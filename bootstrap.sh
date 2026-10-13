@@ -155,13 +155,19 @@ chown caddy:caddy /var/lib/caddy
 
 # Always to the latest version, not just on first install. Stop before
 # swapping the binary rather than over a running process — restart after,
-# below, together with regenerating the Caddyfile.
+# below, together with regenerating the Caddyfile. Several commands run
+# between the stop and the restart (Caddyfile regen, cert ACL/readability
+# checks, caddy validate); under set -e any one of them failing would
+# otherwise kill the script with caddy-naive left stopped and nothing to
+# bring it back — the trap below catches exactly that and is cleared once
+# the real restart below succeeds.
 CADDY_URL=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest \
   | grep browser_download_url | grep "linux_amd64.tar.gz\"" | cut -d '"' -f4)
 curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL"
 mkdir -p /tmp/caddy-extract
 tar xzf /tmp/caddy.tar.gz -C /tmp/caddy-extract
 systemctl stop caddy-naive 2>/dev/null || true
+trap 'systemctl start caddy-naive 2>/dev/null || true' EXIT
 mv /tmp/caddy-extract/caddy /usr/local/bin/caddy
 chmod +x /usr/local/bin/caddy
 rm -rf /tmp/caddy.tar.gz /tmp/caddy-extract
@@ -190,6 +196,7 @@ cp "$REPO_DIR/caddy-naive.service" /etc/systemd/system/caddy-naive.service
 systemctl daemon-reload
 systemctl enable --now caddy-naive
 systemctl restart caddy-naive
+trap - EXIT
 
 certbot renew --deploy-hook "systemctl restart caddy-naive" --dry-run >/dev/null 2>&1 || true
 
@@ -372,8 +379,12 @@ fi
 # Stopping before a rebuild is mandatory: the service periodically
 # overwrites passwords.json from its own memory, and rebuilding/restarting
 # without stopping first risks a race — a just-made edit (vk_hash etc.)
-# could be lost.
+# could be lost. The trap guards the build itself: if it fails (bad
+# network fetching modules, incompatible Go version, upstream repo
+# gone), set -e would otherwise kill the script with wdtt left stopped
+# and the old binary never restarted.
 systemctl stop wdtt 2>/dev/null || true
+trap 'systemctl start wdtt 2>/dev/null || true' EXIT
 (cd /root/build/qwdtt-src && go build -o /usr/local/bin/wdtt-server ./server)
 chmod 755 /usr/local/bin/wdtt-server
 
@@ -433,6 +444,7 @@ sed \
 systemctl daemon-reload
 systemctl enable --now wdtt
 systemctl restart wdtt
+trap - EXIT
 
 # =========================================================================
 # 9. Psiphon — binary, user, config

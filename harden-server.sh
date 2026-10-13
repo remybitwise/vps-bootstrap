@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# Shared kernel/network hardening script — used on both the foreign VPS
-# and the RU node. Idempotent (safe to re-run). Does NOT include the
-# firewall (that's ufw-setup.sh/ru-node-ufw-setup.sh) or the SSH port
-# (change that in sshd_config yourself before running the ufw script —
-# see README for ordering).
+# Kernel/network hardening for the VPS. Idempotent (safe to re-run). Does
+# NOT include the firewall (that's ufw-setup.sh) or the SSH port (change
+# that in sshd_config yourself before running the ufw script — see
+# README for ordering).
 set -euo pipefail
 
 # -----------------------------------------------------------------------
 # 1. BBR — congestion control. Meaningfully improves throughput/latency
-#    specifically on long/potentially lossy links (RU <-> foreign VPS
-#    through DPI equipment — exactly this case). Needs kernel >= 4.9,
-#    ships out of the box on Ubuntu 22.04/24.04.
+#    on long/potentially lossy links (exactly the kind a censor's DPI
+#    equipment sits on). Needs kernel >= 4.9, ships out of the box on
+#    Ubuntu 22.04/24.04.
 # -----------------------------------------------------------------------
 modprobe tcp_bbr 2>/dev/null || true
 grep -q '^tcp_bbr$' /etc/modules-load.d/modules.conf 2>/dev/null || echo "tcp_bbr" >> /etc/modules-load.d/modules.conf
@@ -22,20 +21,8 @@ EOF
 
 # -----------------------------------------------------------------------
 # 2. Network sysctl hardening — SYN flood, ICMP, source routing, backlog.
-#    Note on rp_filter on the RU node: if this machine runs
-#    ru-node-wdtt-routing.sh (policy routing for qWDTT), strict
-#    rp_filter=1 could in theory conflict with routing that looks
-#    asymmetric — the policy-routing mechanism itself (ip rule from/table)
-#    shouldn't interact with rp_filter (which checks incoming packets per
-#    interface, not egress decisions), but this hasn't been verified
-#    empirically against real traffic. On the RU node with wdtt, set
-#    IS_RU_NODE_WITH_WDTT=1 below — rp_filter then runs in loose mode
-#    (=2), safer in a complex multi-interface setup. On the foreign VPS
-#    (no policy routing), leave it strict (=1) — cleaner anti-spoofing.
 # -----------------------------------------------------------------------
-IS_RU_NODE_WITH_WDTT=0   # set to 1 on the RU node if ru-node-wdtt-routing.sh is deployed
 RP_FILTER_MODE=1
-[ "$IS_RU_NODE_WITH_WDTT" = "1" ] && RP_FILTER_MODE=2
 
 cat > /etc/sysctl.d/99-network-hardening.conf <<EOF
 # SYN flood
@@ -50,7 +37,7 @@ net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv4.conf.all.secure_redirects = 0
 
-# anti-spoofing (see the RU-node-with-wdtt note above)
+# anti-spoofing
 net.ipv4.conf.all.rp_filter = ${RP_FILTER_MODE}
 net.ipv4.conf.default.rp_filter = ${RP_FILTER_MODE}
 
@@ -67,9 +54,9 @@ net.ipv4.ip_local_port_range = 10000 65535
 # IPv6 fully disabled — in this setup the services (nginx, sing-box) only
 # listen on IPv4, there's no outward need for IPv6 at all. Smaller
 # surface, less chance of accidentally leaving something reachable with
-# no firewall rule covering it (see also ufw-setup.sh/ru-node-ufw-setup.sh —
-# they also set IPV6=no inside ufw itself, duplicating this protection at
-# the kernel level rather than relying on ufw alone).
+# no firewall rule covering it (ufw-setup.sh also sets IPV6=no inside ufw
+# itself, duplicating this protection at the kernel level rather than
+# relying on ufw alone).
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1

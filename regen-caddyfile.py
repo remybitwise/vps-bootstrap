@@ -32,7 +32,12 @@ if not naive_creds:
     print("WARNING: no CLIENT_*_NAIVE_PASS entries in secrets_file — Caddyfile will reject everyone")
 
 b64_headers = [
-    base64.b64encode(f"{name}:{pw}".encode()).decode()
+    # re.escape: a base64 blob can't contain "+"/"/" when built from
+    # alphanumeric name:password pairs (their byte values never line up
+    # to produce those two output symbols), but nothing enforces that on
+    # the client name — escaping keeps a stray regex metacharacter in an
+    # unusual name from changing what this header_regexp matches.
+    re.escape(base64.b64encode(f"{name}:{pw}".encode()).decode())
     for name, pw in naive_creds.items()
 ]
 pattern = "|".join(b64_headers)
