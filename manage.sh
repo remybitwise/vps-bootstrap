@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # manage.sh — self-contained interactive server-management menu: clients
 # (Reality/naive/qWDTT, each addable/removable independently), Psiphon
-# (status/change exit IP/change region), service status/restart.
+# (status/change exit IP/change region), service status/restart, and
+# updating sing-box/Caddy/qWDTT/Psiphon to their latest versions without
+# re-running the whole of bootstrap.sh (so no firewall/fail2ban/nginx
+# changes, and no need to remember bootstrap.sh's required env vars).
 #
 # Self-contained on purpose: everything needed lives in this one file, no
 # sibling scripts required. The one external dependency kept is
@@ -569,6 +572,150 @@ restart_one_service() {
 }
 
 # =========================================================================
+# Binary updates — the same safe patterns bootstrap.sh uses (stop before
+# swap, backup + restore on failure), but scoped to just these four
+# binaries: no firewall/fail2ban/nginx/Caddyfile changes, and none of
+# bootstrap.sh's required env vars to remember.
+# =========================================================================
+
+update_singbox() {
+  echo "Updating sing-box..."
+  bash <(curl -fsSL https://sing-box.app/install.sh) >/dev/null
+  if ! sing-box check -c "$SING_BOX_CONFIG"; then
+    echo "ERROR: the new sing-box binary fails to validate the existing config — not restarting the service."
+    return 1
+  fi
+  systemctl restart sing-box
+  sleep 1
+  if systemctl is-active --quiet sing-box; then
+    echo "sing-box updated: $(sing-box version | head -1)"
+  else
+    echo "ERROR: sing-box did not come back up, check journalctl -u sing-box"
+    return 1
+  fi
+}
+
+update_caddy() {
+  echo "Updating Caddy..."
+  local url tmp_extract
+  url="$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest \
+    | grep browser_download_url | grep "linux_amd64.tar.gz\"" | cut -d '"' -f4)"
+  [ -z "$url" ] && { echo "ERROR: could not find the latest Caddy release"; return 1; }
+
+  cp /usr/local/bin/caddy /usr/local/bin/caddy.bak
+  curl -fsSL -o /tmp/caddy.tar.gz "$url"
+  tmp_extract="$(mktemp -d)"
+  tar xzf /tmp/caddy.tar.gz -C "$tmp_extract"
+  rm -f /tmp/caddy.tar.gz
+
+  systemctl stop caddy-naive
+  mv "$tmp_extract/caddy" /usr/local/bin/caddy
+  chmod +x /usr/local/bin/caddy
+  rm -rf "$tmp_extract"
+
+  if ! caddy validate --config "$CADDYFILE" --adapter caddyfile; then
+    echo "ERROR: the new Caddy binary rejects the existing Caddyfile — restoring the previous binary."
+    mv /usr/local/bin/caddy.bak /usr/local/bin/caddy
+    systemctl start caddy-naive
+    return 1
+  fi
+  systemctl start caddy-naive
+  sleep 1
+  if systemctl is-active --quiet caddy-naive; then
+    rm -f /usr/local/bin/caddy.bak
+    echo "Caddy updated: $(caddy version)"
+  else
+    echo "ERROR: caddy-naive did not come back up, check journalctl -u caddy-naive"
+    return 1
+  fi
+}
+
+update_qwdtt() {
+  echo "Updating qWDTT..."
+  export PATH=/usr/local/go/bin:$PATH
+  if ! command -v go >/dev/null 2>&1; then
+    curl -fsSL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz -o /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm -f /tmp/go.tar.gz
+    export PATH=/usr/local/go/bin:$PATH
+  fi
+
+  if [ ! -d /root/build/qwdtt-src ]; then
+    git clone --depth 1 https://github.com/SpaceNeuroX/proxy-turn-vk-android.git /root/build/qwdtt-src
+  else
+    git -C /root/build/qwdtt-src fetch --depth 1 origin
+    git -C /root/build/qwdtt-src reset --hard FETCH_HEAD
+  fi
+
+  cp /usr/local/bin/wdtt-server /usr/local/bin/wdtt-server.bak
+  systemctl stop wdtt
+  if ! (cd /root/build/qwdtt-src && go build -o /usr/local/bin/wdtt-server ./server); then
+    echo "ERROR: build failed — restoring the previous binary."
+    mv /usr/local/bin/wdtt-server.bak /usr/local/bin/wdtt-server
+    systemctl start wdtt
+    return 1
+  fi
+  chmod 755 /usr/local/bin/wdtt-server
+  systemctl start wdtt
+  sleep 1
+  if systemctl is-active --quiet wdtt; then
+    rm -f /usr/local/bin/wdtt-server.bak
+    echo "qWDTT updated and running."
+  else
+    echo "ERROR: wdtt did not come back up — restoring the previous binary."
+    systemctl stop wdtt
+    mv /usr/local/bin/wdtt-server.bak /usr/local/bin/wdtt-server
+    systemctl start wdtt
+    return 1
+  fi
+}
+
+update_psiphon() {
+  echo "Updating Psiphon..."
+  local port; port="$(socks_port)"
+  cp /usr/local/bin/psiphon-tunnel-core /usr/local/bin/psiphon-tunnel-core.bak
+  curl -fsSL -o /tmp/psiphon-tunnel-core.new \
+    "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
+  chmod 755 /tmp/psiphon-tunnel-core.new
+  mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
+
+  systemctl restart psiphon
+  if psiphon_wait_up "$port"; then
+    rm -f /usr/local/bin/psiphon-tunnel-core.bak
+    echo "Psiphon updated and tunnel is up."
+  else
+    echo "ERROR: the new Psiphon binary did not come up — restoring the previous one."
+    mv /usr/local/bin/psiphon-tunnel-core.bak /usr/local/bin/psiphon-tunnel-core
+    systemctl restart psiphon
+    return 1
+  fi
+}
+
+update_all_binaries() {
+  echo "This updates sing-box, Caddy, qWDTT and Psiphon to their latest versions."
+  echo "It does NOT touch firewall/fail2ban/nginx — those stay as they are."
+  local ans; ans=$(ask_yn "Continue? [y/N]" N)
+  [ "$ans" = 1 ] || { echo "Cancelled."; return; }
+
+  local failed=()
+  update_singbox || failed+=("sing-box")
+  echo
+  update_caddy || failed+=("Caddy")
+  echo
+  update_qwdtt || failed+=("qWDTT")
+  echo
+  update_psiphon || failed+=("Psiphon")
+
+  echo
+  if [ "${#failed[@]}" = 0 ]; then
+    echo "All updated successfully."
+  else
+    echo "Failed: ${failed[*]} — see the errors above."
+  fi
+}
+
+# =========================================================================
 # Menu
 # =========================================================================
 
@@ -587,6 +734,7 @@ while true; do
   echo "Services:"
   echo "  8) Status of all services"
   echo "  9) Restart sing-box/caddy-naive/wdtt"
+  echo " 10) Update sing-box/Caddy/qWDTT/Psiphon to latest"
   echo "  0) Exit"
   read -rp "> " choice
   case "$choice" in
@@ -599,6 +747,7 @@ while true; do
     7) watchdog_log_tail ;;
     8) services_status ;;
     9) restart_one_service ;;
+    10) update_all_binaries ;;
     0) exit 0 ;;
     *) echo "Unrecognized choice, pick an item from the list." ;;
   esac

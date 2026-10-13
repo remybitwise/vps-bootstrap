@@ -6,6 +6,7 @@
 set -uo pipefail
 
 DOMAIN="${DOMAIN:?set DOMAIN}"
+CLIENT_NAME="${CLIENT_NAME:?set CLIENT_NAME}"
 FAIL=0
 NEW_CLIENT="${NEW_CLIENT:-citest2}"
 SECRETS_FILE=/root/.vps-bootstrap-secrets.env
@@ -73,5 +74,22 @@ echo "$out" | grep -q "=== Psiphon ===" && ok "menu: Psiphon status ran" || bad 
 echo "$out" | grep -q "sing-box restarted\." && ok "menu: sing-box restart via menu ran" || bad "menu: sing-box restart did not print confirmation"
 if echo "$out" | grep -A20 "Status of all services" | grep -q "FAIL"; then bad "menu: services_status reported a FAIL"; else ok "menu: services_status reported no FAIL"; fi
 systemctl is-active --quiet sing-box && ok "sing-box active after menu restart" || bad "sing-box not active after menu restart"
+
+echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 10) ---"
+out="$(run_manage "10\nY\n0\n" 2>&1)"
+echo "$out"
+
+echo "$out" | grep -q "sing-box updated:" && ok "menu: sing-box update reported success" || bad "menu: sing-box update did not report success"
+echo "$out" | grep -q "Caddy updated:" && ok "menu: Caddy update reported success" || bad "menu: Caddy update did not report success"
+echo "$out" | grep -q "qWDTT updated and running\." && ok "menu: qWDTT update reported success" || bad "menu: qWDTT update did not report success"
+echo "$out" | grep -q "Psiphon updated and tunnel is up\." && ok "menu: Psiphon update reported success" || bad "menu: Psiphon update did not report success"
+echo "$out" | grep -q "All updated successfully\." && ok "menu: update summary reported success" || bad "menu: update summary did not report success"
+
+for svc in sing-box caddy-naive wdtt psiphon; do
+  systemctl is-active --quiet "$svc" && ok "$svc active after binary update" || bad "$svc not active after binary update"
+done
+
+echo "--- real connection check after the binary update ---"
+test_client "$DOMAIN" "$CLIENT_NAME" || true
 
 exit "$FAIL"
