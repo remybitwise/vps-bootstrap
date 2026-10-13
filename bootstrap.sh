@@ -128,7 +128,17 @@ systemctl reload nginx
 # =========================================================================
 
 log "4/12 — certbot"
-if [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
+if [ "${SKIP_CERTBOT:-0}" = "1" ]; then
+  # CI/testing only: no real domain pointed at this machine to pass an
+  # HTTP-01 challenge, so a self-signed cert stands in at the same path
+  # certbot would use. Never set this for a real deployment.
+  log "SKIP_CERTBOT=1 — generating a self-signed certificate instead of a real one"
+  mkdir -p "/etc/letsencrypt/live/${DOMAIN}" "/etc/letsencrypt/archive/${DOMAIN}"
+  openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+    -keyout "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" \
+    -out "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" \
+    -subj "/CN=${DOMAIN}" >/dev/null 2>&1
+elif [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
   certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN" --agree-tos -m "$EMAIL" --non-interactive
 else
   log "certificate for ${DOMAIN} already exists, skipping issuance"

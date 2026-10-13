@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax (bash -n)
+        run: |
+          status=0
+          for f in $(find . -name '*.sh' -not -path './.git/*'); do
+            bash -n "$f" || { echo "SYNTAX ERROR: $f"; status=1; }
+          done
+          exit $status
+
+      - name: shellcheck
+        run: |
+          status=0
+          for f in $(find . -name '*.sh' -not -path './.git/*'); do
+            shellcheck -S warning "$f" || status=1
+          done
+          exit $status
+
+      - name: Python syntax (ast.parse)
+        run: |
+          for f in $(find . -name '*.py' -not -path './.git/*'); do
+            python3 -c "import ast; ast.parse(open('$f').read())" || exit 1
+          done
+
+      - name: JSON templates parse
+        run: python3 -m json.tool psiphon.config > /dev/null
+
+  deploy-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ci.invalid
+      EMAIL: ci@example.com
+      SSH_PORT: "2201"
+      PSIPHON_EGRESS_REGION: NL
+      CLIENT_NAMES: citest
+      CLIENT_NAME: citest
+      SKIP_CERTBOT: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run bootstrap.sh
+        run: sudo -E bash bootstrap.sh
+
+      - name: Smoke-test real client connections
+        run: sudo -E bash .github/scripts/smoke-test.sh
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fail2ban; do
+            echo "::group::journalctl -u $svc"
+            sudo journalctl -u "$svc" --no-pager -n 100 || true
+            echo "::endgroup::"
+          done

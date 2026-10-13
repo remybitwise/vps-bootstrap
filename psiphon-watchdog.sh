@@ -43,6 +43,7 @@ S=(--socks5-hostname "127.0.0.1:${SOCKS_PORT}")
 log() { printf '%s %s\n' "$(date -Is)" "$*" >> "$LOG"; }
 
 fails=0; last_gemini=0; gemini_tunnel=""; captcha=0
+# shellcheck disable=SC1090
 [ -r "$STATE" ] && . "$STATE"
 now=$(date +%s)
 

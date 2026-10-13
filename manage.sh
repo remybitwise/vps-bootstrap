@@ -203,7 +203,8 @@ _do_add_reality_naive() {
     echo "CLIENT_${name}_NAIVE_PASS=$new_naive_pass" >> "$SECRETS_FILE"
   fi
 
-  local backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
+  local backup
+  backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
   cp "$SING_BOX_CONFIG" "$backup"
 
   python3 - "$name" "$do_reality" "$new_uuid" "$do_naive" "$new_naive_pass" "$SING_BOX_CONFIG" <<'PYEOF'
@@ -263,7 +264,8 @@ _do_remove_reality_naive() {
     return 0
   fi
 
-  local backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
+  local backup
+  backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
   cp "$SING_BOX_CONFIG" "$backup"
 
   python3 - "$name" "$do_reality" "$do_naive" "$SING_BOX_CONFIG" <<'PYEOF'
@@ -454,8 +456,8 @@ egress_region() {
 }
 
 psiphon_wait_up() {
-  local port="$1" i
-  for i in $(seq 1 12); do
+  local port="$1"
+  for _ in $(seq 1 12); do
     code="$(curl -s -o /dev/null --max-time 10 --socks5-hostname "127.0.0.1:${port}" \
             -w '%{http_code}' https://www.gstatic.com/generate_204 2>/dev/null)"
     [ "$code" = "204" ] && return 0
