@@ -72,7 +72,11 @@ echo "$out"
 
 echo "$out" | grep -q "=== Psiphon ===" && ok "menu: Psiphon status ran" || bad "menu: Psiphon status did not print"
 echo "$out" | grep -q "sing-box restarted\." && ok "menu: sing-box restart via menu ran" || bad "menu: sing-box restart did not print confirmation"
-if echo "$out" | grep -A20 "Status of all services" | grep -q "FAIL"; then bad "menu: services_status reported a FAIL"; else ok "menu: services_status reported no FAIL"; fi
+# $out is scoped to just this one menu run (4, 8, 9, 1, 0) — services_status
+# is the only thing in it that ever prints the word FAIL, so a plain,
+# unwindowed grep is both simpler and more precise than trying to isolate
+# its output by line count around the (repeated, per-redraw) menu text.
+if echo "$out" | grep -q "FAIL"; then bad "menu: services_status reported a FAIL"; else ok "menu: services_status reported no FAIL"; fi
 systemctl is-active --quiet sing-box && ok "sing-box active after menu restart" || bad "sing-box not active after menu restart"
 
 echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 10) ---"

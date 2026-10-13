@@ -97,6 +97,11 @@ PYEOF
     fi
   fi
 
+  if [ ! -f "$workdir/reality-client.json" ] && [ ! -f "$workdir/naive-client.json" ]; then
+    bad "[$name] no Reality or naive secret found for this name — nothing was actually tested"
+    result=1
+  fi
+
   rm -rf "$workdir"
   return $result
 }

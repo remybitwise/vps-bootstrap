@@ -521,8 +521,7 @@ systemctl enable --now psiphon-watchdog.timer
 
 log "11/12 — fail2ban"
 tmp_f2b="$(mktemp)"
-sed -e "s/REPLACE_WITH_YOUR_SSH_PORT/${SSH_PORT}/" \
-    -e "s/^NGINX_HAS_STREAM_LOG=.*/NGINX_HAS_STREAM_LOG=0/" \
+sed "s/REPLACE_WITH_YOUR_SSH_PORT/${SSH_PORT}/" \
     "$REPO_DIR/fail2ban-setup.sh" > "$tmp_f2b"
 bash "$tmp_f2b"
 rm -f "$tmp_f2b"
