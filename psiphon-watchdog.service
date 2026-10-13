@@ -1,0 +1,11 @@
+[Unit]
+Description=Psiphon watchdog — liveness/country/throughput check, rotates on failure
+After=psiphon.service
+# Wants=, not Requires=: the watchdog's own rotation restarts psiphon.service,
+# and Requires= would kill this unit along with it mid-run, right as it's
+# trying to persist its own state.
+Wants=psiphon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/psiphon-watchdog

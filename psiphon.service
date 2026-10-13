@@ -1,0 +1,30 @@
+[Unit]
+Description=Psiphon egress tunnel (native, no Docker) — used for Google-geolocation-sensitive traffic
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=psiphon
+Group=psiphon
+ExecStart=/usr/local/bin/psiphon-tunnel-core -config /etc/psiphon/psiphon.config -notices /var/log/psiphon/notices.log
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/psiphon /var/log/psiphon
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

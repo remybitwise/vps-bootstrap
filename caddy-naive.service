@@ -1,0 +1,38 @@
+[Unit]
+Description=Caddy for naive proxy camouflage (stock binary, CONNECT+header filter to sing-box naive inbound)
+After=network.target nginx.service
+
+[Service]
+User=caddy
+Group=caddy
+WorkingDirectory=/etc/caddy
+ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+UMask=0077
+Environment=XDG_CONFIG_HOME=/var/lib/caddy/.config
+Environment=XDG_DATA_HOME=/var/lib/caddy/.local/share
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/log/caddy
+ReadWritePaths=/var/lib/caddy
+ReadOnlyPaths=/var/www/html
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_UNIX AF_NETLINK
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

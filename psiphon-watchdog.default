@@ -1,0 +1,61 @@
+# psiphon-watchdog tuning — see psiphon-watchdog.sh for the reasoning
+# behind each check. Ported from Chara-Freedom/vps-psiphon's watchdog, with
+# one departure: the Google-verdict source is ads.google.com's locale
+# redirect, not YouTube's embedded GL field.
+
+SOCKS_PORT=11080
+
+# Primary region (must match EgressRegion in /etc/psiphon/psiphon.config).
+EGRESS_REGION=NL
+
+# Countries to rotate through on repeated failure, space separated. Keep
+# them near each other — a retry then draws on another country's servers.
+REGION_POOL="NL DE FR BE"
+
+# Countries the exit must never sit in — sanctioned regions where Google
+# withholds service, plus CN (blocks Google outright). Checked first, in
+# every mode, against the ads.google.com verdict.
+DENY_REGIONS="RU BY IR SY CU KP CN"
+
+# No ACCEPT_REGIONS: the exit's country doesn't need to be on any list, it
+# just needs to match what Psiphon itself reports for the connected server
+# (ConnectedServerRegion in notices.log). A mismatch is the signal.
+
+# Minimum throughput (KB/s) measured on a download of BULK_TEST_MB, counted
+# from its first byte so a connection-setup delay doesn't read as slowness.
+# 0 disables. Recalibrate from your own history:
+# grep throughput /var/log/psiphon/watchdog.log
+MIN_THROUGHPUT_KBPS=800
+
+# Size, MB, of the watchdog's throughput download — part of a real file on
+# Google's own download host, large enough to measure the actual rate
+# rather than a queueing delay. ~17.5 GB/month at 4 MB every 10 minutes.
+# 0 disables the download and skips the throughput floor entirely — use
+# only on a host whose traffic is metered or scarce.
+BULK_TEST_MB=4
+
+# Seconds between asking Gemini itself whether it serves the exit; every
+# new tunnel is also asked at its first check regardless of this interval.
+# Gemini keeps a geo-check of its own that nothing else here can see — see
+# PSIPHON.md for why that matters. A refusal (error 1060) is decisive.
+# 0 disables.
+GEMINI_CHECK_SEC=7200
+
+# Slow-tunnel failures counted consecutively, no sliding window. Only
+# "slow" waits for this many in a row — it often recovers on its own.
+# Every other failure (dead socks, stalled download, denied country,
+# region mismatch, Gemini refusal) rotates on its first occurrence.
+FAIL_THRESHOLD=2
+
+# No rotation cooldown: it could only delay a rotation, never prevent one,
+# and the exit it would protect is already known bad.
+
+# Seconds after a (re)start during which the throughput gate is skipped —
+# must be longer than the check interval (10 min) or it never applies.
+THROUGHPUT_GRACE_SEC=900
+
+# Force a plain restart (same region, fresh exit IP) once a tunnel has been
+# up this long, even if every check keeps passing — bounds exposure to a
+# stale verdict in some Google geo database that nothing above can read.
+# 0 disables.
+MAX_UPTIME_SEC=86400

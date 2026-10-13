@@ -1,0 +1,5 @@
+*.env
+secrets.env
+*.secrets
+*.bak
+*.bak-*

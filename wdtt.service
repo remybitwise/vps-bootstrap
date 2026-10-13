@@ -1,0 +1,41 @@
+[Unit]
+Description=WDTT VPN Server (qWDTT — whitelist bypass disguised as a VK call)
+After=network.target network-online.target sing-box.service
+Wants=network-online.target
+# Wants=, not Requires=: Requires= would stop wdtt every time sing-box
+# restarts (e.g. for a binary upgrade), which it shouldn't.
+Wants=sing-box.service
+
+[Service]
+Type=simple
+User=wdtt
+Group=wdtt
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+ReadWritePaths=/etc/wdtt
+ExecStartPre=-/usr/bin/env bash -c "ip link show wdtt0 >/dev/null 2>&1 && ip link del wdtt0 2>/dev/null || true"
+ExecStartPre=-/usr/bin/env bash -c "iptables -C INPUT -p udp --dport REPLACE_WITH_WDTT_DTLS_PORT -m comment --comment WDTT_MANAGED -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport REPLACE_WITH_WDTT_DTLS_PORT -m comment --comment WDTT_MANAGED -j ACCEPT"
+ExecStartPre=-/usr/bin/env bash -c "iptables -C INPUT -m mark --mark 0x1/0x1 -j ACCEPT -m comment --comment WDTT_MANAGED 2>/dev/null || iptables -I INPUT -m mark --mark 0x1/0x1 -j ACCEPT -m comment --comment WDTT_MANAGED"
+ExecStartPre=-/usr/bin/env bash -c "ip rule add fwmark 1 lookup 100 2>/dev/null || true"
+ExecStartPre=-/usr/bin/env bash -c "ip route add local 0.0.0.0/0 dev lo table 100 2>/dev/null || true"
+ExecStartPre=-/usr/bin/env bash -c "iptables -t mangle -N WDTT_TPROXY 2>/dev/null || true"
+ExecStartPre=-/usr/bin/env bash -c "iptables -t mangle -C WDTT_TPROXY -p udp -j TPROXY --on-port REPLACE_WITH_WDTT_TPROXY_PORT --tproxy-mark 0x1/0x1 2>/dev/null || iptables -t mangle -A WDTT_TPROXY -p udp -j TPROXY --on-port REPLACE_WITH_WDTT_TPROXY_PORT --tproxy-mark 0x1/0x1"
+ExecStartPre=-/usr/bin/env bash -c "iptables -t mangle -C WDTT_TPROXY -p tcp -j TPROXY --on-port REPLACE_WITH_WDTT_TPROXY_PORT --tproxy-mark 0x1/0x1 2>/dev/null || iptables -t mangle -A WDTT_TPROXY -p tcp -j TPROXY --on-port REPLACE_WITH_WDTT_TPROXY_PORT --tproxy-mark 0x1/0x1"
+ExecStartPre=-/usr/bin/env bash -c "iptables -t mangle -C PREROUTING -i wdtt0 -m comment --comment WDTT_MANAGED -j WDTT_TPROXY 2>/dev/null || iptables -t mangle -A PREROUTING -i wdtt0 -m comment --comment WDTT_MANAGED -j WDTT_TPROXY"
+ExecStart=/usr/local/bin/wdtt-server -listen 0.0.0.0:REPLACE_WITH_WDTT_DTLS_PORT -wg-port REPLACE_WITH_WDTT_WG_PORT -config-dir /etc/wdtt
+ExecStopPost=-/usr/bin/env bash -c "iptables -t mangle -D PREROUTING -i wdtt0 -m comment --comment WDTT_MANAGED -j WDTT_TPROXY 2>/dev/null || true"
+Restart=always
+RestartSec=5
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
