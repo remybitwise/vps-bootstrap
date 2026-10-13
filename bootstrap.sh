@@ -473,8 +473,17 @@ sed \
   "$REPO_DIR/wdtt.service" > /etc/systemd/system/wdtt.service
 
 systemctl daemon-reload
-systemctl enable --now wdtt
-systemctl restart wdtt
+# Same problem as naive-in: wdtt-server exits immediately with zero
+# passwords configured ("no active passwords for WRAP"). Leave it
+# stopped until manage.sh adds the first one.
+if python3 -c "import json,sys; sys.exit(0 if json.load(open('/etc/wdtt/passwords.json'))['passwords'] else 1)"; then
+  systemctl enable --now wdtt
+  systemctl restart wdtt
+else
+  log "no qWDTT clients yet — leaving wdtt stopped"
+  systemctl disable wdtt 2>/dev/null || true
+  systemctl stop wdtt 2>/dev/null || true
+fi
 trap - EXIT
 
 # =========================================================================
@@ -558,6 +567,10 @@ log "12/12 — check"
 
 all_ok=1
 for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fail2ban; do
+  if [ "$svc" = "wdtt" ] && ! systemctl is-enabled --quiet wdtt 2>/dev/null; then
+    echo "  --   wdtt (no qWDTT clients yet)"
+    continue
+  fi
   if systemctl is-active --quiet "$svc"; then
     echo "  OK   $svc"
   else

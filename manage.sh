@@ -382,7 +382,9 @@ PYEOF
   chown wdtt:wdtt "$WDTT_CONFIG"
   chmod 600 "$WDTT_CONFIG"
 
-  systemctl start wdtt
+  # enable, not just start: may be disabled (see bootstrap.sh)
+  systemctl enable --now wdtt
+  systemctl restart wdtt
   sleep 1
   if ! systemctl is-active --quiet wdtt; then
     echo "ERROR: wdtt did not come back up, check journalctl -u wdtt"
@@ -428,7 +430,12 @@ json.dump(d, open('$WDTT_CONFIG', 'w'), indent=2)
 "
   chown wdtt:wdtt "$WDTT_CONFIG"
   chmod 600 "$WDTT_CONFIG"
-  systemctl start wdtt
+  # stay stopped if that was the last password (see bootstrap.sh)
+  if python3 -c "import json,sys; sys.exit(0 if json.load(open('$WDTT_CONFIG'))['passwords'] else 1)"; then
+    systemctl start wdtt
+  else
+    systemctl disable wdtt 2>/dev/null || true
+  fi
   echo "'$name' removed from qWDTT."
 }
 
@@ -587,6 +594,10 @@ watchdog_log_tail() {
 services_status() {
   local svc
   for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fail2ban; do
+    if [ "$svc" = "wdtt" ] && ! systemctl is-enabled --quiet wdtt 2>/dev/null; then
+      echo "  --   wdtt (no qWDTT clients yet)"
+      continue
+    fi
     if systemctl is-active --quiet "$svc"; then
       echo "  OK   $svc"
     else
@@ -687,15 +698,27 @@ update_qwdtt() {
     git -C /root/build/qwdtt-src reset --hard FETCH_HEAD
   fi
 
+  local was_enabled=0
+  systemctl is-enabled --quiet wdtt 2>/dev/null && was_enabled=1
+
   cp /usr/local/bin/wdtt-server /usr/local/bin/wdtt-server.bak
   systemctl stop wdtt
   if ! (cd /root/build/qwdtt-src && go build -o /usr/local/bin/wdtt-server ./server); then
     echo "ERROR: build failed — restoring the previous binary."
     mv /usr/local/bin/wdtt-server.bak /usr/local/bin/wdtt-server
-    systemctl start wdtt
+    [ "$was_enabled" = 1 ] && systemctl start wdtt
     return 1
   fi
   chmod 755 /usr/local/bin/wdtt-server
+
+  # No qWDTT clients at all: nothing to actually run, so nothing to
+  # verify either — the new binary is in place and that's the update.
+  if [ "$was_enabled" = 0 ]; then
+    rm -f /usr/local/bin/wdtt-server.bak
+    echo "qWDTT updated (no clients yet, so nothing is running to restart)."
+    return 0
+  fi
+
   systemctl start wdtt
   sleep 1
   if systemctl is-active --quiet wdtt; then
