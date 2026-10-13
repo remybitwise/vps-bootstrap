@@ -3,9 +3,7 @@
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
 [![Dependency bump check](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml)
 
-The folder is self-contained — everything needed lives right here, no
-dependency on the rest of the repo. `bootstrap.sh` sets up on a clean
-Ubuntu VPS:
+`bootstrap.sh` sets up on a clean Ubuntu VPS:
 
 - **sing-box** — VLESS+Reality (disguised as a plain HTTPS site,
   "selfsteal": invalid connections are transparently forwarded to a real
@@ -78,8 +76,7 @@ below.
 
 ## Managing the server after setup
 
-`manage.sh` next to this file — also self-contained, but for day-to-day
-management of an already-running server:
+`manage.sh` — for day-to-day management of an already-running server:
 
 ```bash
 bash manage.sh
