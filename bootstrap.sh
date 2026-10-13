@@ -193,17 +193,20 @@ id caddy >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/
 mkdir -p /etc/caddy /var/log/caddy /var/lib/caddy /var/www/html
 chown caddy:caddy /var/lib/caddy
 
-# Always to the latest version, not just on first install. Stop before
-# swapping the binary rather than over a running process — restart after,
-# below, together with regenerating the Caddyfile. Several commands run
-# between the stop and the restart (Caddyfile regen, cert ACL/readability
-# checks, caddy validate); under set -e any one of them failing would
-# otherwise kill the script with caddy-naive left stopped and nothing to
-# bring it back — the trap below catches exactly that and is cleared once
-# the real restart below succeeds.
-CADDY_URL=$(curl -s "https://api.github.com/repos/caddyserver/caddy/releases/tags/${CADDY_VERSION}" \
-  | grep browser_download_url | grep "linux_amd64.tar.gz\"" | cut -d '"' -f4)
-curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL"
+# Pinned (VERSIONS), downloaded directly instead of discovered through
+# api.github.com — that API is rate-limited per IP and GitHub Actions
+# runners share IPs, so it was flaking in CI; the release-asset URL
+# itself follows a fixed naming convention and needs no lookup once the
+# exact tag is already known. Stop before swapping the binary rather
+# than over a running process — restart after, below, together with
+# regenerating the Caddyfile. Several commands run between the stop and
+# the restart (Caddyfile regen, cert ACL/readability checks, caddy
+# validate); under set -e any one of them failing would otherwise kill
+# the script with caddy-naive left stopped and nothing to bring it back
+# — the trap below catches exactly that and is cleared once the real
+# restart below succeeds.
+curl -fsSL -o /tmp/caddy.tar.gz \
+  "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${CADDY_VERSION#v}_linux_amd64.tar.gz"
 mkdir -p /tmp/caddy-extract
 tar xzf /tmp/caddy.tar.gz -C /tmp/caddy-extract
 systemctl stop caddy-naive 2>/dev/null || true
