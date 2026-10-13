@@ -137,7 +137,7 @@ if [ "${SKIP_CERTBOT:-0}" = "1" ]; then
   openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
     -keyout "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" \
     -out "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" \
-    -subj "/CN=${DOMAIN}" >/dev/null 2>&1
+    -subj "/CN=${DOMAIN}" -addext "subjectAltName=DNS:${DOMAIN}" >/dev/null 2>&1
 elif [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
   certbot certonly --webroot -w /var/www/certbot -d "$DOMAIN" --agree-tos -m "$EMAIL" --non-interactive
 else
