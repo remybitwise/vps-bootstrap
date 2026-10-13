@@ -57,6 +57,9 @@ jobs:
       - name: Smoke-test real client connections
         run: sudo -E bash .github/scripts/smoke-test.sh
 
+      - name: Functional test manage.sh (add/remove client, Psiphon status, service restart)
+        run: sudo -E bash .github/scripts/manage-functional-test.sh
+
       - name: Dump service logs on failure
         if: failure()
         run: |
