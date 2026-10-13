@@ -621,7 +621,12 @@ echo "  peer=<server IP>:${WDTT_DTLS_PORT}, wg-port=${WDTT_WG_PORT}"
 
 echo
 if [ "$all_ok" = "1" ]; then
-  echo "Done, all services are active."
+  # Stamped only on a fully successful run — the file is meant to record
+  # what's actually running, not what a half-failed attempt tried to
+  # deploy. manage.sh and a future install.sh read this to warn before
+  # updating across a MAJOR version — see CHANGELOG.md for what that means.
+  cp "$REPO_DIR/VERSION" /etc/vps-bootstrap-version
+  echo "Done, all services are active. (version $(cat "$REPO_DIR/VERSION"))"
 else
   echo "WARNING: not all services are active, see FAIL above — journalctl -u <service>."
   exit 1

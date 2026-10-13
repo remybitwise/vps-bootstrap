@@ -11,6 +11,15 @@ FAIL=0
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
+echo "--- version stamp ---"
+repo_version="$(cat VERSION)"
+deployed_version="$(cat /etc/vps-bootstrap-version 2>/dev/null || echo '(missing)')"
+if [ "$repo_version" = "$deployed_version" ]; then
+  ok "deployed version matches VERSION ($deployed_version)"
+else
+  bad "deployed version '$deployed_version' does not match repo VERSION '$repo_version'"
+fi
+
 echo "--- Reality + naive: real client -> server -> Psiphon-out -> gstatic ---"
 test_client "$DOMAIN" "$CLIENT_NAME" || true
 

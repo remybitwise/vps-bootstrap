@@ -135,3 +135,14 @@ One detail worth knowing: `ufw-setup.sh` fully reinstalls the `ufw`
 package on every run (purge → install) — on a re-run this is a brief
 window where the firewall is temporarily down. Not an issue on a new
 machine, but worth knowing on a server already in use.
+
+## Versioning
+
+[`VERSION`](VERSION) and [`CHANGELOG.md`](CHANGELOG.md) follow
+[Semantic Versioning](https://semver.org/) — a MAJOR bump means
+something `bootstrap.sh`/`manage.sh` generate or parse changed shape
+(sing-box config fields, `/etc/default/psiphon-watchdog` variable
+names, `passwords.json` schema), the kind of change a re-run could
+silently misread. `bootstrap.sh` stamps the version it deployed to
+`/etc/vps-bootstrap-version` on a successful run; `manage.sh` shows it
+in its menu header.

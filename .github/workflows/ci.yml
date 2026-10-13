@@ -37,6 +37,9 @@ jobs:
       - name: Validate JSON templates
         run: python3 -m json.tool psiphon.config > /dev/null
 
+      - name: Validate VERSION format (semver)
+        run: grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
+
   deploy-test:
     needs: lint
     runs-on: ubuntu-latest

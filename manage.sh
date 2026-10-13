@@ -26,8 +26,13 @@ WDTT_SERVICE=/etc/systemd/system/wdtt.service
 PSIPHON_DEFAULT=/etc/default/psiphon-watchdog
 PSIPHON_CONFIG=/etc/psiphon/psiphon.config
 WATCHDOG_LOG=/var/log/psiphon/watchdog.log
+VERSION_FILE=/etc/vps-bootstrap-version
 
 [ "$(id -u)" = "0" ] || { echo "ERROR: run as root"; exit 1; }
+
+deployed_version() {
+  cat "$VERSION_FILE" 2>/dev/null || echo "unknown (no $VERSION_FILE — deployed before versioning, or bootstrap.sh never finished cleanly)"
+}
 
 domain() {
   python3 -c "import json; print(json.load(open('$SING_BOX_CONFIG'))['inbounds'][0]['tls']['server_name'])" 2>/dev/null || echo "?"
@@ -723,7 +728,7 @@ update_all_binaries() {
 
 while true; do
   echo
-  echo "=== Server management ($(domain)) ==="
+  echo "=== Server management ($(domain)) — version $(deployed_version) ==="
   echo "Clients:"
   echo "  1) List clients"
   echo "  2) Add client"

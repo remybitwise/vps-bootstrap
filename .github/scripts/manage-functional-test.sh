@@ -22,6 +22,9 @@ echo "--- manage.sh: add client '$NEW_CLIENT' (Reality + naive + qWDTT) ---"
 out="$(run_manage "2\n${NEW_CLIENT}\nY\nY\nY\n0\n" 2>&1)"
 echo "$out"
 
+repo_version="$(cat VERSION)"
+echo "$out" | grep -q "version $repo_version" && ok "menu header shows the deployed version ($repo_version)" || bad "menu header does not show version $repo_version"
+
 if grep -q "^CLIENT_${NEW_CLIENT}_UUID=" "$SECRETS_FILE"; then ok "secrets: Reality UUID written"; else bad "secrets: Reality UUID missing"; fi
 if grep -q "^CLIENT_${NEW_CLIENT}_NAIVE_PASS=" "$SECRETS_FILE"; then ok "secrets: naive password written"; else bad "secrets: naive password missing"; fi
 
