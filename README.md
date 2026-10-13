@@ -34,6 +34,17 @@ Ubuntu VPS:
 
 ## Running it
 
+Don't have this repo checked out yet? `install.sh` fetches it (a
+tarball, no `git` needed, pinned to the latest release) and runs
+`bootstrap.sh` for you, asking for anything you didn't set as an env var:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/remybitwise/vps-bootstrap/master/install.sh)
+```
+
+Already have it checked out? Run `bootstrap.sh` directly — same inputs,
+no fetching:
+
 ```bash
 DOMAIN=your.domain \
 EMAIL=your@email \
@@ -41,11 +52,12 @@ PSIPHON_EGRESS_REGION=NL \
 bash bootstrap.sh
 ```
 
-`SSH_PORT` isn't listed above — it's read straight off whatever sshd is
-actually listening on, set up by hand per `SSH-HARDENING.md` before this
-ever runs. Set it explicitly only if you need to override that for some
-reason. `bootstrap.sh` never prompts for anything itself, so it stays
-predictable on a re-run.
+Either way: `SSH_PORT` isn't listed above — it's read straight off
+whatever sshd is actually listening on, set up by hand per
+`SSH-HARDENING.md` before this ever runs. Set it explicitly only if you
+need to override that for some reason. `bootstrap.sh` never prompts for
+anything itself (so it stays predictable on a re-run) — `install.sh` is
+the one place that asks, and only for whatever a first run still needs.
 
 Optional:
 - `WDTT_DTLS_PORT` / `WDTT_WG_PORT` / `WDTT_TPROXY_PORT` — qWDTT ports,
@@ -116,7 +128,11 @@ without reinstalling anything.
 `bootstrap.sh` can be re-run with **no variables at all** on an
 already-configured server — it pulls the latest versions of
 sing-box/Caddy/qWDTT/Psiphon and fresh configs/units, but doesn't touch
-what can't be regenerated:
+what can't be regenerated. The same `install.sh` one-liner from
+"Running it" works here too, unchanged — once `/etc/vps-bootstrap-version`
+exists (written by a successful run), it fetches the latest release and
+re-runs `bootstrap.sh` without asking anything at all, since there's
+nothing left for it to ask about:
 
 - **`DOMAIN`** — read back from sing-box's own config (matched by its
   `vless-reality-in` tag).

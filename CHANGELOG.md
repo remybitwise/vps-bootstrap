@@ -31,6 +31,12 @@ links/configs `bootstrap.sh` used to print at the end needs to switch to
 - No more interactive prompts anywhere in `bootstrap.sh` — every value
   resolves from an env var, or this VPS's own already-deployed state, or
   a hard failure.
+- New `install.sh`: a one-command launcher (fetches this repo as a
+  tarball, no `git` needed, pinned to the latest release by default)
+  that asks for whatever a genuine first run still needs, then runs
+  `bootstrap.sh`. The same one-liner updates an already-bootstrapped
+  server with no prompts at all — it only asks on a server that's never
+  been bootstrapped (`/etc/vps-bootstrap-version` missing).
 - `DOMAIN` auto-detection now matches sing-box's `vless-reality-in` tag
   instead of assuming it's the first inbound in the list.
 - `SSH_PORT` auto-detection now reads the actually-listening sshd

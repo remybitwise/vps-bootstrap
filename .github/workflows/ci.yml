@@ -124,3 +124,52 @@ jobs:
             sudo journalctl -u "$svc" --no-pager -n 100 || true
             echo "::endgroup::"
           done
+
+  install-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ci.invalid
+      EMAIL: ci@example.com
+      SSH_PORT: "2201"
+      PSIPHON_EGRESS_REGION: NL
+      CLIENT_NAME: citest
+      SKIP_CERTBOT: "1"
+      # Pins install.sh's own internal fetch to this exact commit — so
+      # this tests the real curl-from-GitHub one-liner end to end,
+      # against what this push actually contains, not whatever the
+      # latest tagged release happens to be.
+      VPS_BOOTSTRAP_REF: ${{ github.sha }}
+    steps:
+      # Needed for manage.sh/the test scripts below, not for install.sh
+      # itself — that one really does fetch itself and the rest of the
+      # repo over the network, from scratch, exactly as a real first run
+      # would.
+      - uses: actions/checkout@v4
+
+      - name: Set up a real sshd listening on SSH_PORT (for live detection)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y openssh-server
+          echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+          sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
+          sleep 1
+          ss -tlnp | grep sshd
+
+      - name: Install via the real one-liner (fetches this exact commit from GitHub)
+        run: sudo -E bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/${VPS_BOOTSTRAP_REF}/install.sh")
+
+      - name: Add the test client via manage.sh
+        run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo -E bash manage.sh
+
+      - name: Smoke-test real client connections
+        run: sudo -E bash .github/scripts/smoke-test.sh
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.service psiphon-watchdog.timer ufw fail2ban; do
+            echo "::group::journalctl -u $svc"
+            sudo journalctl -u "$svc" --no-pager -n 100 || true
+            echo "::endgroup::"
+          done
