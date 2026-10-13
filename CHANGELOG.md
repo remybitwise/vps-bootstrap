@@ -11,7 +11,7 @@ misread state. **MINOR** for anything new that's backward compatible.
 `/etc/vps-bootstrap-version` on a deployed server records which version
 is actually running there, written by `bootstrap.sh` on a successful run.
 
-## [Unreleased]
+## [2.1.0] - 2026-10-14
 
 Upstream sing-box/Caddy/qWDTT/Psiphon versions are now pinned in
 `VERSIONS` instead of `bootstrap.sh` always fetching "latest" — a
@@ -22,6 +22,13 @@ thing right now, no compatibility guarantee" escape hatch.
 
 A weekly `dep-bump.yml` workflow checks upstream for newer versions and
 opens a PR bumping `VERSIONS`, gated by the normal CI run on that PR.
+
+- Caddy's pinned version is downloaded directly by its release-asset
+  URL instead of discovered through `api.github.com` — that API is
+  rate-limited per IP, and CI runners share IPs with unrelated jobs.
+- `manage.sh`'s qWDTT "update to latest" fetched `origin` with no ref,
+  which can land on whatever branch the remote listed last instead of
+  the actual default branch. Now fetches `origin HEAD` explicitly.
 
 ## [2.0.0] - 2026-10-14
 
