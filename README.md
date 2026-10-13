@@ -1,6 +1,7 @@
 # vps-bootstrap — stand up the whole stack in one run
 
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
+[![Dependency bump check](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml)
 
 The folder is self-contained — everything needed lives right here, no
 dependency on the rest of the repo. `bootstrap.sh` sets up on a clean
