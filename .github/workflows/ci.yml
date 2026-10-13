@@ -217,10 +217,15 @@ jobs:
           echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
           sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
           sleep 1
-          ss -tlnp | grep sshd
+          sudo ss -tlnp | grep sshd
 
       - name: Install via the real one-liner (fetches this exact commit from GitHub)
-        run: sudo -E bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/${VPS_BOOTSTRAP_REF}/install.sh")
+        # The whole curl-and-process-substitution has to happen inside
+        # the sudo'd shell, not before it — a /dev/fd/N opened by this
+        # step's own (unprivileged) shell isn't visible once sudo execs
+        # into a root process, so `sudo bash <(curl ...)` fails with
+        # "No such file or directory" even though the curl itself works.
+        run: sudo -E bash -c 'bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/$VPS_BOOTSTRAP_REF/install.sh")'
 
       - name: Add the test client via manage.sh
         run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo -E bash manage.sh

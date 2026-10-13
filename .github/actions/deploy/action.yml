@@ -16,7 +16,10 @@ runs:
         echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
         sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
         sleep 1
-        ss -tlnp | grep sshd
+        # sudo: ss -p only resolves process names for sockets it can see —
+        # as the unprivileged runner user it can't see sshd's (owned by
+        # root), so without sudo this finds nothing and grep fails.
+        sudo ss -tlnp | grep sshd
 
     - name: Run bootstrap.sh (stands up infrastructure, no clients yet)
       shell: bash

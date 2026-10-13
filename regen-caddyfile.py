@@ -16,12 +16,16 @@ import sys
 domain, sing_box_config, caddyfile_path = sys.argv[1:4]
 
 # bootstrap.sh calls this before sing-box's own config exists yet on a
-# first run (Caddy is set up one step before sing-box) — no file yet
-# means no naive users yet either, same as any other first-run default.
+# first run (Caddy is set up one step before sing-box) — but the package
+# install (step 0, earlier) can leave its own stock example config.json
+# at this same path, with a shape that's not ours at all (no "tag" on
+# its inbounds). Either way — no file, or a file that isn't the one
+# bootstrap.sh itself writes — means no naive users yet, same as any
+# other first-run default.
 try:
     d = json.load(open(sing_box_config))
-    naive_users = next((i["users"] for i in d["inbounds"] if i["tag"] == "naive-in"), [])
-except FileNotFoundError:
+    naive_users = next((i.get("users", []) for i in d.get("inbounds", []) if i.get("tag") == "naive-in"), [])
+except (FileNotFoundError, json.JSONDecodeError):
     naive_users = []
 
 if not naive_users:
