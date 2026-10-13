@@ -1,0 +1,83 @@
+name: Dependency bump check
+
+# Weekly check of the four pinned versions in VERSIONS against upstream.
+# Opens a PR when any moved — the normal ci.yml run on that PR is the
+# real gate, not this job; merging it is a deliberate release decision,
+# same as any other change.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Look up latest upstream versions
+        id: latest
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, urllib.request
+
+          def get(url):
+              req = urllib.request.Request(url, headers={"User-Agent": "vps-bootstrap-dep-bump"})
+              return json.load(urllib.request.urlopen(req))
+
+          sing_box = get("https://api.github.com/repos/SagerNet/sing-box/releases/latest")["tag_name"].lstrip("v")
+          caddy = get("https://api.github.com/repos/caddyserver/caddy/releases/latest")["tag_name"]
+          qwdtt = get("https://api.github.com/repos/SpaceNeuroX/proxy-turn-vk-android/commits/HEAD")["sha"]
+          psiphon = get("https://api.github.com/repos/Psiphon-Labs/psiphon-tunnel-core-binaries/commits/master")["sha"]
+
+          print(f"sing_box={sing_box}")
+          print(f"caddy={caddy}")
+          print(f"qwdtt={qwdtt}")
+          print(f"psiphon={psiphon}")
+          EOF
+
+      - name: Update VERSIONS if anything moved
+        id: update
+        run: |
+          cp VERSIONS /tmp/VERSIONS.orig
+          sed -i \
+            -e "s/^SING_BOX_VERSION=.*/SING_BOX_VERSION=${{ steps.latest.outputs.sing_box }}/" \
+            -e "s/^CADDY_VERSION=.*/CADDY_VERSION=${{ steps.latest.outputs.caddy }}/" \
+            -e "s/^QWDTT_REF=.*/QWDTT_REF=${{ steps.latest.outputs.qwdtt }}/" \
+            -e "s/^PSIPHON_REF=.*/PSIPHON_REF=${{ steps.latest.outputs.psiphon }}/" \
+            VERSIONS
+          if diff -q /tmp/VERSIONS.orig VERSIONS >/dev/null; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open a PR with the bump, unless one's already open
+        if: steps.update.outputs.changed == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Merging a bump PR is what actually updates VERSIONS on
+          # master — until that happens, every weekly run sees the same
+          # diff. Without this check a red (or just unreviewed) PR would
+          # pile up a new one alongside it every Monday.
+          existing="$(gh pr list --state open --json headRefName -q '.[].headRefName' | grep -c '^dep-bump/' || true)"
+          if [ "$existing" -gt 0 ]; then
+            echo "An open dep-bump PR already exists — not opening another; merge or close it first."
+            exit 0
+          fi
+
+          branch="dep-bump/$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add VERSIONS
+          git commit -m "chore: bump pinned upstream dependency versions"
+          git push origin "$branch"
+          gh pr create --title "Bump pinned dependency versions" \
+            --body "Weekly check found newer upstream sing-box/Caddy/qWDTT/Psiphon versions than \`VERSIONS\` pins. CI on this PR is the real gate — merge only if it comes back green." \
+            --head "$branch" --base master

@@ -159,6 +159,11 @@ upstream, same as always — no compatibility guarantee, which is exactly
 why that's a manual, one-binary-at-a-time action instead of what a
 plain re-run does.
 
+A weekly workflow (`dep-bump.yml`) checks upstream for newer versions
+and opens a PR bumping `VERSIONS` if it finds any — the normal CI run
+on that PR is the real gate, merging it is a deliberate choice like any
+other change.
+
 Changing `DOMAIN` on a re-run (a deliberate, rare operation — needs the
 new domain's DNS already pointed here) issues a new certificate and
 leaves the old one behind, unused. It's never deleted automatically

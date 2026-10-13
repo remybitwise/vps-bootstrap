@@ -20,6 +20,9 @@ on deploy day. `manage.sh`'s per-binary update menu is unchanged and
 still goes straight to latest — that's the deliberate "update this one
 thing right now, no compatibility guarantee" escape hatch.
 
+A weekly `dep-bump.yml` workflow checks upstream for newer versions and
+opens a PR bumping `VERSIONS`, gated by the normal CI run on that PR.
+
 ## [2.0.0] - 2026-10-14
 
 **BREAKING:** `bootstrap.sh` no longer creates any clients. A first run
