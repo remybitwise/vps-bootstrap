@@ -1,0 +1,9 @@
+# Pinned upstream dependency versions. bootstrap.sh installs exactly
+# these, never "latest" — so a release's behavior is reproducible and a
+# server update can't silently pull in an incompatible upstream change.
+# Bumped by .github/workflows/dep-bump.yml (weekly), gated by the normal
+# CI run on the bump PR before it merges.
+SING_BOX_VERSION=1.14.3
+CADDY_VERSION=v2.11.7
+QWDTT_REF=a296c57eaba69bb9479a24f9157856490890e47d
+PSIPHON_REF=33ff79e89260f3adf92e846b96b3369b86a819d8

@@ -80,6 +80,9 @@ WDTT_TPROXY_PORT="${WDTT_TPROXY_PORT:-12345}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SECRETS_FILE="/root/.vps-bootstrap-secrets.env"
 
+# shellcheck disable=SC1091
+. "$REPO_DIR/VERSIONS"
+
 [ "$(id -u)" = "0" ] || { echo "ERROR: run as root"; exit 1; }
 
 log() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -88,13 +91,13 @@ log "0/12 — apt-get update"
 apt-get update -qq
 
 # =========================================================================
-# 0. sing-box binary (always to the latest version — safe: apt .deb, then
-#    an explicit restart below) + server-wide Reality keys (generated
-#    once, read after — a re-run never touches them)
+# 0. sing-box binary (pinned, see VERSIONS — safe: apt .deb, then an
+#    explicit restart below) + server-wide Reality keys (generated once,
+#    read after — a re-run never touches them)
 # =========================================================================
 
-log "updating sing-box to the latest version"
-bash <(curl -fsSL https://sing-box.app/install.sh) >/dev/null
+log "installing sing-box $SING_BOX_VERSION"
+bash <(curl -fsSL https://sing-box.app/install.sh) --version "$SING_BOX_VERSION" >/dev/null
 
 if [ -f "$SECRETS_FILE" ]; then
   log "Secrets already generated ($SECRETS_FILE) — reusing"
@@ -198,7 +201,7 @@ chown caddy:caddy /var/lib/caddy
 # otherwise kill the script with caddy-naive left stopped and nothing to
 # bring it back — the trap below catches exactly that and is cleared once
 # the real restart below succeeds.
-CADDY_URL=$(curl -s https://api.github.com/repos/caddyserver/caddy/releases/latest \
+CADDY_URL=$(curl -s "https://api.github.com/repos/caddyserver/caddy/releases/tags/${CADDY_VERSION}" \
   | grep browser_download_url | grep "linux_amd64.tar.gz\"" | cut -d '"' -f4)
 curl -fsSL -o /tmp/caddy.tar.gz "$CADDY_URL"
 mkdir -p /tmp/caddy-extract
@@ -420,12 +423,15 @@ export PATH=/usr/local/go/bin:$PATH
 apt install -y git >/dev/null
 mkdir -p /root/build
 
-if [ ! -d /root/build/qwdtt-src ]; then
-  git clone --depth 1 https://github.com/SpaceNeuroX/proxy-turn-vk-android.git /root/build/qwdtt-src
-else
-  git -C /root/build/qwdtt-src fetch --depth 1 origin
-  git -C /root/build/qwdtt-src reset --hard FETCH_HEAD
+if [ ! -d /root/build/qwdtt-src/.git ]; then
+  git init -q /root/build/qwdtt-src
+  git -C /root/build/qwdtt-src remote add origin https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
 fi
+# Pinned to QWDTT_REF (VERSIONS), not the default branch's moving head —
+# GitHub allows fetching a public repo by exact commit SHA without a
+# full clone.
+git -C /root/build/qwdtt-src fetch --depth 1 origin "$QWDTT_REF"
+git -C /root/build/qwdtt-src checkout --detach FETCH_HEAD
 
 # Stopping before a rebuild is mandatory: the service periodically
 # overwrites passwords.json from its own memory, and rebuilding/restarting
@@ -496,11 +502,12 @@ mkdir -p /var/lib/psiphon /var/log/psiphon /etc/psiphon
 chown -R psiphon:psiphon /var/lib/psiphon /var/log/psiphon
 chmod 700 /var/lib/psiphon
 
-# Always to the latest version. Download to a temp file and mv into place
-# (atomic swap) instead of curl -o straight to the target path — that
-# would rewrite the same inode, which is unsafe under a running process.
+# Pinned to PSIPHON_REF (VERSIONS), not master. Download to a temp file
+# and mv into place (atomic swap) instead of curl -o straight to the
+# target path — that would rewrite the same inode, which is unsafe under
+# a running process.
 curl -fsSL -o /tmp/psiphon-tunnel-core.new \
-  "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
+  "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/${PSIPHON_REF}/linux/psiphon-tunnel-core-x86_64"
 chmod 755 /tmp/psiphon-tunnel-core.new
 mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
 

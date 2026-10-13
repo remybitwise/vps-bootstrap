@@ -126,9 +126,10 @@ without reinstalling anything.
 ## Re-running updates everything to current
 
 `bootstrap.sh` can be re-run with **no variables at all** on an
-already-configured server — it pulls the latest versions of
-sing-box/Caddy/qWDTT/Psiphon and fresh configs/units, but doesn't touch
-what can't be regenerated. The same `install.sh` one-liner from
+already-configured server — it installs sing-box/Caddy/qWDTT/Psiphon at
+the exact versions pinned in `VERSIONS` (never "latest" — see below) and
+fresh configs/units, but doesn't touch what can't be regenerated. The
+same `install.sh` one-liner from
 "Running it" works here too, unchanged — once `/etc/vps-bootstrap-version`
 exists (written by a successful run), it fetches the latest release and
 re-runs `bootstrap.sh` without asking anything at all, since there's
@@ -148,6 +149,15 @@ nothing left for it to ask about:
 - **`MIN_THROUGHPUT_KBPS` calibration** — kept if it's no longer the
   default. Every other variable in `/etc/default/psiphon-watchdog` comes
   from a fresh template each time.
+
+**Upstream versions are pinned, not floating.** `VERSIONS` fixes exactly
+which sing-box/Caddy/qWDTT/Psiphon version `bootstrap.sh` installs, so a
+release behaves the same on every server that runs it, update or not.
+Need a newer version right now anyway? `manage.sh`'s update menu still
+updates that one binary straight to whatever's actually latest
+upstream, same as always — no compatibility guarantee, which is exactly
+why that's a manual, one-binary-at-a-time action instead of what a
+plain re-run does.
 
 Changing `DOMAIN` on a re-run (a deliberate, rare operation — needs the
 new domain's DNS already pointed here) issues a new certificate and

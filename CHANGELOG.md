@@ -11,6 +11,15 @@ misread state. **MINOR** for anything new that's backward compatible.
 `/etc/vps-bootstrap-version` on a deployed server records which version
 is actually running there, written by `bootstrap.sh` on a successful run.
 
+## [Unreleased]
+
+Upstream sing-box/Caddy/qWDTT/Psiphon versions are now pinned in
+`VERSIONS` instead of `bootstrap.sh` always fetching "latest" — a
+release's behavior no longer depends on what upstream happens to ship
+on deploy day. `manage.sh`'s per-binary update menu is unchanged and
+still goes straight to latest — that's the deliberate "update this one
+thing right now, no compatibility guarantee" escape hatch.
+
 ## [2.0.0] - 2026-10-14
 
 **BREAKING:** `bootstrap.sh` no longer creates any clients. A first run
