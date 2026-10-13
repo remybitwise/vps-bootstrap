@@ -1,4 +1,4 @@
-# bootstrap/ — stand up the whole stack in one run
+# vps-bootstrap — stand up the whole stack in one run
 
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
 
