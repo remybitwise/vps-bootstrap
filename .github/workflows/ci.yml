@@ -40,7 +40,15 @@ jobs:
       - name: Validate VERSION format (semver)
         run: grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' VERSION
 
-  deploy-test:
+  # The four jobs below all `needs: lint` (no point burning a deploy on
+  # an obvious syntax error) but not each other — they run in parallel,
+  # each on its own fresh VM, each starting from its own independent
+  # bootstrap.sh deploy (the deploy composite action). That's a few
+  # redundant seconds of setup per job traded for wall-clock time overall
+  # and for every job's failure meaning exactly one thing — cheap on a
+  # public repo's unlimited Actions minutes.
+
+  smoke-test:
     needs: lint
     runs-on: ubuntu-latest
     env:
@@ -52,24 +60,33 @@ jobs:
       SKIP_CERTBOT: "1"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up a real sshd listening on SSH_PORT (for live detection)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y openssh-server
-          echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
-          sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
-          sleep 1
-          ss -tlnp | grep sshd
-
-      - name: Run bootstrap.sh (stands up infrastructure, no clients yet)
-        run: sudo -E bash bootstrap.sh
-
-      - name: Add the test client via manage.sh (bootstrap.sh never creates one)
-        run: printf '2\ncitest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
+      - uses: ./.github/actions/deploy
 
       - name: Smoke-test real client connections
         run: sudo -E bash .github/scripts/smoke-test.sh
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.service psiphon-watchdog.timer ufw fail2ban; do
+            echo "::group::journalctl -u $svc"
+            sudo journalctl -u "$svc" --no-pager -n 100 || true
+            echo "::endgroup::"
+          done
+
+  update-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ci.invalid
+      EMAIL: ci@example.com
+      SSH_PORT: "2201"
+      PSIPHON_EGRESS_REGION: NL
+      CLIENT_NAME: citest
+      SKIP_CERTBOT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
 
       - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
         run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo -E bash manage.sh
@@ -107,11 +124,57 @@ jobs:
       - name: Remove the asymmetric test client
         run: printf '3\nasymtest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
 
-      - name: Smoke-test real client connections (again, after the bare re-run)
+      - name: Smoke-test real client connections (after the bare re-run)
         run: sudo -E bash .github/scripts/smoke-test.sh
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.service psiphon-watchdog.timer ufw fail2ban; do
+            echo "::group::journalctl -u $svc"
+            sudo journalctl -u "$svc" --no-pager -n 100 || true
+            echo "::endgroup::"
+          done
+
+  manage-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ci.invalid
+      EMAIL: ci@example.com
+      SSH_PORT: "2201"
+      PSIPHON_EGRESS_REGION: NL
+      CLIENT_NAME: citest
+      SKIP_CERTBOT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
 
       - name: Functional-test manage.sh end to end
         run: sudo -E bash .github/scripts/manage-functional-test.sh
+
+      - name: Dump service logs on failure
+        if: failure()
+        run: |
+          for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.service psiphon-watchdog.timer ufw fail2ban; do
+            echo "::group::journalctl -u $svc"
+            sudo journalctl -u "$svc" --no-pager -n 100 || true
+            echo "::endgroup::"
+          done
+
+  failover-test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      DOMAIN: ci.invalid
+      EMAIL: ci@example.com
+      SSH_PORT: "2201"
+      PSIPHON_EGRESS_REGION: NL
+      CLIENT_NAME: citest
+      SKIP_CERTBOT: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/deploy
 
       - name: Test Google direct-fallback failover
         run: sudo -E bash .github/scripts/failover-test.sh

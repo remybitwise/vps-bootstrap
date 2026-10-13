@@ -1,0 +1,27 @@
+name: Deploy and add the standard test client
+description: >
+  Sets up a real sshd on SSH_PORT, runs bootstrap.sh for the first time,
+  and adds the standard CLIENT_NAME client via manage.sh — the common
+  starting point every CI test job needs, since bootstrap.sh itself no
+  longer creates one. Shared here so the four test jobs that need it
+  don't each carry their own copy.
+runs:
+  using: composite
+  steps:
+    - name: Set up a real sshd listening on SSH_PORT (for live detection)
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y openssh-server
+        echo "Port ${SSH_PORT}" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+        sudo systemctl restart ssh 2>/dev/null || sudo systemctl restart sshd
+        sleep 1
+        ss -tlnp | grep sshd
+
+    - name: Run bootstrap.sh (stands up infrastructure, no clients yet)
+      shell: bash
+      run: sudo -E bash bootstrap.sh
+
+    - name: Add the test client via manage.sh (bootstrap.sh never creates one)
+      shell: bash
+      run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo -E bash manage.sh
