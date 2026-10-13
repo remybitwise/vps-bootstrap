@@ -694,7 +694,8 @@ update_qwdtt() {
   if [ ! -d /root/build/qwdtt-src ]; then
     git clone --depth 1 https://github.com/SpaceNeuroX/proxy-turn-vk-android.git /root/build/qwdtt-src
   else
-    git -C /root/build/qwdtt-src fetch --depth 1 origin
+    # "origin" alone can land FETCH_HEAD on a stray branch, not master.
+    git -C /root/build/qwdtt-src fetch --depth 1 origin HEAD
     git -C /root/build/qwdtt-src reset --hard FETCH_HEAD
   fi
 
