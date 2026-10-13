@@ -11,6 +11,27 @@ misread state. **MINOR** for anything new that's backward compatible.
 `/etc/vps-bootstrap-version` on a deployed server records which version
 is actually running there, written by `bootstrap.sh` on a successful run.
 
+## [1.1.0] - 2026-10-14
+
+- **Google direct-fallback failover.** If Psiphon can't recover — every
+  region in `REGION_POOL` tried and failed, `REGION_SWEEPS_BEFORE_DIRECT`
+  times in a row — Google-destined traffic is routed directly from the
+  VPS's own IP instead of failing outright. Switches back the moment one
+  region checks clean twice in a row. New: `singbox-google-route.sh`
+  (flips sing-box's route for Google traffic, idempotent). Backward
+  compatible: `region_cycle_fails`/`via_direct`/`clean_streak` in
+  `watchdog.state` default to 0 when absent (an old state file just
+  works), and `REGION_SWEEPS_BEFORE_DIRECT=0` disables the fallback
+  entirely if ever needed.
+- `psiphon.service` now has `OnFailure=psiphon-watchdog.service` — an
+  actual crash fires the watchdog immediately instead of waiting for the
+  timer.
+- `psiphon-watchdog.timer`: 10min → 5min, now that `OnFailure=` covers
+  instant reaction to a real crash and the timer only needs to catch
+  slower degradation (slow throughput, wrong region, Gemini refusing).
+- `manage.sh`'s Psiphon status now shows where Google traffic is
+  currently routed.
+
 ## [1.0.0] - 2026-10-13
 
 Initial tagged baseline.
