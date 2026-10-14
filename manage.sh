@@ -698,6 +698,16 @@ services_status() {
 # bootstrap.sh's required env vars to remember.
 # =========================================================================
 
+# qWDTT/Psiphon have no version command for bootstrap.sh to compare
+# against VERSIONS, so updating one here marks it overridden — a later
+# bootstrap.sh run leaves it alone instead of reverting to the pin.
+mark_overridden() {
+  local f="/var/lib/vps-bootstrap/overrides"
+  mkdir -p "$(dirname "$f")"
+  touch "$f"
+  grep -qx "$1" "$f" || echo "$1" >> "$f"
+}
+
 update_singbox() {
   echo "Updating sing-box..."
   bash <(curl -fsSL https://sing-box.app/install.sh) >/dev/null
@@ -761,31 +771,34 @@ update_qwdtt() {
     export PATH=/usr/local/go/bin:$PATH
   fi
 
-  if [ ! -d /root/build/qwdtt-src ]; then
-    git clone --depth 1 https://github.com/SpaceNeuroX/proxy-turn-vk-android.git /root/build/qwdtt-src
-  else
-    # "origin" alone can land FETCH_HEAD on a stray branch, not master.
-    git -C /root/build/qwdtt-src fetch --depth 1 origin HEAD
-    git -C /root/build/qwdtt-src reset --hard FETCH_HEAD
-  fi
+  # Throwaway clone, not kept — the repo's Android app isn't needed.
+  local src; src="$(mktemp -d)"
+  git init -q "$src"
+  git -C "$src" remote add origin https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
+  # "origin HEAD" always resolves to the remote's real default branch.
+  git -C "$src" fetch --depth 1 origin HEAD
+  git -C "$src" checkout --detach FETCH_HEAD
 
   local was_enabled=0
   systemctl is-enabled --quiet wdtt 2>/dev/null && was_enabled=1
 
   cp /usr/local/bin/wdtt-server /usr/local/bin/wdtt-server.bak
   systemctl stop wdtt
-  if ! (cd /root/build/qwdtt-src && go build -o /usr/local/bin/wdtt-server ./server); then
+  if ! (cd "$src" && go build -o /usr/local/bin/wdtt-server ./server); then
     echo "ERROR: build failed — restoring the previous binary."
     mv /usr/local/bin/wdtt-server.bak /usr/local/bin/wdtt-server
     [ "$was_enabled" = 1 ] && systemctl start wdtt
+    rm -rf "$src"
     return 1
   fi
   chmod 755 /usr/local/bin/wdtt-server
+  rm -rf "$src"
 
   # No qWDTT clients at all: nothing to actually run, so nothing to
   # verify either — the new binary is in place and that's the update.
   if [ "$was_enabled" = 0 ]; then
     rm -f /usr/local/bin/wdtt-server.bak
+    mark_overridden qwdtt
     echo "qWDTT updated (no clients yet, so nothing is running to restart)."
     return 0
   fi
@@ -794,6 +807,7 @@ update_qwdtt() {
   sleep 1
   if systemctl is-active --quiet wdtt; then
     rm -f /usr/local/bin/wdtt-server.bak
+    mark_overridden qwdtt
     echo "qWDTT updated and running."
   else
     echo "ERROR: wdtt did not come back up — restoring the previous binary."
@@ -816,6 +830,7 @@ update_psiphon() {
   systemctl restart psiphon
   if psiphon_wait_up "$port"; then
     rm -f /usr/local/bin/psiphon-tunnel-core.bak
+    mark_overridden psiphon
     echo "Psiphon updated and tunnel is up."
   else
     echo "ERROR: the new Psiphon binary did not come up — restoring the previous one."

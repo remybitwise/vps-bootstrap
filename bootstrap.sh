@@ -72,6 +72,24 @@ SECRETS_FILE="/root/.vps-bootstrap-secrets.env"
 
 log() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 
+# version_ge A B -> A >= B in real version order (1.9.0 < 1.14.3), not string order.
+version_ge() {
+  [ "$1" = "$2" ] && return 0
+  [ -z "$1" ] && return 1
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$1" ]
+}
+
+# qWDTT/Psiphon have no version command, so a manual manage.sh update is
+# tracked here and left alone — FORCE_REINSTALL=qwdtt,psiphon overrides.
+STATE_DIR="/var/lib/vps-bootstrap"
+mkdir -p "$STATE_DIR"
+MANUAL_OVERRIDES_FILE="$STATE_DIR/overrides"
+PSIPHON_INSTALLED_REF_FILE="$STATE_DIR/psiphon-ref"
+
+is_force() { [[ ",${FORCE_REINSTALL:-}," == *",$1,"* ]]; }
+is_overridden() { [ -f "$MANUAL_OVERRIDES_FILE" ] && grep -qx "$1" "$MANUAL_OVERRIDES_FILE"; }
+clear_override() { [ -f "$MANUAL_OVERRIDES_FILE" ] && sed -i "/^${1}$/d" "$MANUAL_OVERRIDES_FILE"; }
+
 log "0/12 — apt-get update"
 apt-get update -qq
 
@@ -81,8 +99,13 @@ apt-get update -qq
 #    read after — a re-run never touches them)
 # =========================================================================
 
-log "installing sing-box $SING_BOX_VERSION"
-bash <(curl -fsSL https://sing-box.app/install.sh) --version "$SING_BOX_VERSION" >/dev/null
+singbox_installed_ver="$(sing-box version 2>/dev/null | awk 'NR==1{print $NF}')" || true
+if ! is_force singbox && version_ge "$singbox_installed_ver" "$SING_BOX_VERSION"; then
+  log "sing-box $singbox_installed_ver already >= pinned $SING_BOX_VERSION, skipping"
+else
+  log "installing sing-box $SING_BOX_VERSION"
+  bash <(curl -fsSL https://sing-box.app/install.sh) --version "$SING_BOX_VERSION" >/dev/null
+fi
 
 if [ -f "$SECRETS_FILE" ]; then
   log "Secrets already generated ($SECRETS_FILE) — reusing"
@@ -176,18 +199,23 @@ id caddy >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/
 mkdir -p /etc/caddy /var/log/caddy /var/lib/caddy /var/www/html
 chown caddy:caddy /var/lib/caddy
 
-# Pinned (VERSIONS), downloaded directly by URL — api.github.com is
-# rate-limited per IP and was flaking in CI on shared runner IPs.
-# Trap below restarts caddy-naive if anything fails before we do.
-curl -fsSL -o /tmp/caddy.tar.gz \
-  "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${CADDY_VERSION#v}_linux_amd64.tar.gz"
-mkdir -p /tmp/caddy-extract
-tar xzf /tmp/caddy.tar.gz -C /tmp/caddy-extract
-systemctl stop caddy-naive 2>/dev/null || true
-trap 'systemctl start caddy-naive 2>/dev/null || true' EXIT
-mv /tmp/caddy-extract/caddy /usr/local/bin/caddy
-chmod +x /usr/local/bin/caddy
-rm -rf /tmp/caddy.tar.gz /tmp/caddy-extract
+caddy_installed_ver="$(caddy version 2>/dev/null | awk 'NR==1{print $1}')" || true
+if ! is_force caddy && version_ge "$caddy_installed_ver" "$CADDY_VERSION"; then
+  log "Caddy $caddy_installed_ver already >= pinned $CADDY_VERSION, skipping"
+else
+  # Pinned (VERSIONS), downloaded directly by URL — api.github.com is
+  # rate-limited per IP and was flaking in CI on shared runner IPs.
+  # Trap below restarts caddy-naive if anything fails before we do.
+  curl -fsSL -o /tmp/caddy.tar.gz \
+    "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${CADDY_VERSION#v}_linux_amd64.tar.gz"
+  mkdir -p /tmp/caddy-extract
+  tar xzf /tmp/caddy.tar.gz -C /tmp/caddy-extract
+  systemctl stop caddy-naive 2>/dev/null || true
+  trap 'systemctl start caddy-naive 2>/dev/null || true' EXIT
+  mv /tmp/caddy-extract/caddy /usr/local/bin/caddy
+  chmod +x /usr/local/bin/caddy
+  rm -rf /tmp/caddy.tar.gz /tmp/caddy-extract
+fi
 
 sed "s/REPLACE_WITH_YOUR_NAIVE_DOMAIN/${DOMAIN}/g" "$REPO_DIR/decoy-site/index.html" > /var/www/html/index.html
 
@@ -378,39 +406,51 @@ systemctl restart sing-box
 # 7. qWDTT — build from source
 # =========================================================================
 
+QWDTT_INSTALLED_REF_FILE="$STATE_DIR/qwdtt-ref"
+
+build_qwdtt() {
+  if ! command -v /usr/local/go/bin/go >/dev/null 2>&1; then
+    curl -fsSL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz -o /tmp/go.tar.gz
+    rm -rf /usr/local/go
+    tar -C /usr/local -xzf /tmp/go.tar.gz
+    rm -f /tmp/go.tar.gz
+  fi
+  export PATH=/usr/local/go/bin:$PATH
+  apt install -y git >/dev/null
+
+  # Built in a throwaway dir, not kept — the repo's Android app isn't
+  # needed, and there's no reason to keep source around once the binary
+  # exists.
+  local src; src="$(mktemp -d)"
+  git init -q "$src"
+  git -C "$src" remote add origin https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
+  git -C "$src" fetch --depth 1 origin "$QWDTT_REF"
+  git -C "$src" checkout --detach FETCH_HEAD
+
+  # Stop first: wdtt periodically overwrites passwords.json from memory,
+  # racing a rebuild could lose a just-made edit. Trap restarts it if the
+  # build itself fails, so set -e doesn't leave it stopped for nothing.
+  systemctl stop wdtt 2>/dev/null || true
+  trap 'systemctl start wdtt 2>/dev/null || true' EXIT
+  (cd "$src" && go build -o /usr/local/bin/wdtt-server ./server)
+  chmod 755 /usr/local/bin/wdtt-server
+  rm -rf "$src"
+  echo "$QWDTT_REF" > "$QWDTT_INSTALLED_REF_FILE"
+}
+
 log "7/12 — qWDTT: build"
-if ! command -v /usr/local/go/bin/go >/dev/null 2>&1; then
-  curl -fsSL https://go.dev/dl/go1.26.6.linux-amd64.tar.gz -o /tmp/go.tar.gz
-  rm -rf /usr/local/go
-  tar -C /usr/local -xzf /tmp/go.tar.gz
-  rm -f /tmp/go.tar.gz
+qwdtt_current_ref="$(cat "$QWDTT_INSTALLED_REF_FILE" 2>/dev/null || true)"
+if is_force qwdtt; then
+  clear_override qwdtt
+  log "FORCE_REINSTALL: rebuilding qWDTT at $QWDTT_REF"
+  build_qwdtt
+elif is_overridden qwdtt; then
+  log "qWDTT was manually updated via manage.sh — leaving it (FORCE_REINSTALL=qwdtt to override)"
+elif [ "$qwdtt_current_ref" = "$QWDTT_REF" ] && [ -x /usr/local/bin/wdtt-server ]; then
+  log "qWDTT already at $QWDTT_REF, skipping"
+else
+  build_qwdtt
 fi
-export PATH=/usr/local/go/bin:$PATH
-
-apt install -y git >/dev/null
-mkdir -p /root/build
-
-if [ ! -d /root/build/qwdtt-src/.git ]; then
-  git init -q /root/build/qwdtt-src
-  git -C /root/build/qwdtt-src remote add origin https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
-fi
-# Pinned to QWDTT_REF (VERSIONS), not the default branch's moving head —
-# GitHub allows fetching a public repo by exact commit SHA without a
-# full clone.
-git -C /root/build/qwdtt-src fetch --depth 1 origin "$QWDTT_REF"
-git -C /root/build/qwdtt-src checkout --detach FETCH_HEAD
-
-# Stopping before a rebuild is mandatory: the service periodically
-# overwrites passwords.json from its own memory, and rebuilding/restarting
-# without stopping first risks a race — a just-made edit (vk_hash etc.)
-# could be lost. The trap guards the build itself: if it fails (bad
-# network fetching modules, incompatible Go version, upstream repo
-# gone), set -e would otherwise kill the script with wdtt left stopped
-# and the old binary never restarted.
-systemctl stop wdtt 2>/dev/null || true
-trap 'systemctl start wdtt 2>/dev/null || true' EXIT
-(cd /root/build/qwdtt-src && go build -o /usr/local/bin/wdtt-server ./server)
-chmod 755 /usr/local/bin/wdtt-server
 
 # =========================================================================
 # 8. qWDTT — user, passwords (no bot/API), permissions
@@ -469,14 +509,28 @@ mkdir -p /var/lib/psiphon /var/log/psiphon /etc/psiphon
 chown -R psiphon:psiphon /var/lib/psiphon /var/log/psiphon
 chmod 700 /var/lib/psiphon
 
-# Pinned to PSIPHON_REF (VERSIONS), not master. Download to a temp file
-# and mv into place (atomic swap) instead of curl -o straight to the
-# target path — that would rewrite the same inode, which is unsafe under
-# a running process.
-curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/psiphon-tunnel-core.new \
-  "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/${PSIPHON_REF}/linux/psiphon-tunnel-core-x86_64"
-chmod 755 /tmp/psiphon-tunnel-core.new
-mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
+install_psiphon() {
+  # mv into place (atomic swap), not curl -o straight to the target path —
+  # that would rewrite the same inode, unsafe under a running process.
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/psiphon-tunnel-core.new \
+    "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/${PSIPHON_REF}/linux/psiphon-tunnel-core-x86_64"
+  chmod 755 /tmp/psiphon-tunnel-core.new
+  mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
+  echo "$PSIPHON_REF" > "$PSIPHON_INSTALLED_REF_FILE"
+}
+
+psiphon_current_ref="$(cat "$PSIPHON_INSTALLED_REF_FILE" 2>/dev/null || true)"
+if is_force psiphon; then
+  clear_override psiphon
+  log "FORCE_REINSTALL: reinstalling Psiphon at $PSIPHON_REF"
+  install_psiphon
+elif is_overridden psiphon; then
+  log "Psiphon was manually updated via manage.sh — leaving it (FORCE_REINSTALL=psiphon to override)"
+elif [ "$psiphon_current_ref" = "$PSIPHON_REF" ] && [ -x /usr/local/bin/psiphon-tunnel-core ]; then
+  log "Psiphon already at $PSIPHON_REF, skipping"
+else
+  install_psiphon
+fi
 
 # Fresh template — PSIPHON_EGRESS_REGION was already resolved to the
 # live value above, so this can't undo the watchdog's rotation.

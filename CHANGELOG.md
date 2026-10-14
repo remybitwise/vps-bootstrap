@@ -19,6 +19,19 @@ link + sing-box JSON for Reality/naive, and `wdtt://`/`qwdtt://` links
 for qWDTT. Menu item numbers shifted; anything scripting `manage.sh`'s
 stdin needs to account for that.
 
+`bootstrap.sh` now skips reinstalling a binary that's already at least
+as new as its `VERSIONS` pin — sing-box/Caddy by comparing the real
+installed version, qWDTT/Psiphon (no version command to check) by
+remembering the last ref it installed. A manual update via `manage.sh`
+is never rolled back on the next re-run: sing-box/Caddy because a newer
+real version already satisfies the pin, qWDTT/Psiphon because that
+update marks the component overridden, left alone for good unless
+`FORCE_REINSTALL=qwdtt,psiphon` (etc.) says otherwise.
+
+qWDTT's build no longer keeps the cloned repo around (it only ever
+built `./server`) — a throwaway temp dir instead, deleted once the
+binary's in place.
+
 ## [2.2.1] - 2026-10-14
 
 The Psiphon binary download had no retry — a dropped connection

@@ -101,9 +101,12 @@ blocked, there's somewhere to switch to without reinstalling anything.
 ## Re-running updates everything in place
 
 `bootstrap.sh` can be re-run with no variables at all on an already
-set-up server. It reinstalls sing-box/Caddy/qWDTT/Psiphon at the
-versions pinned in `VERSIONS`, regenerates configs, and leaves
-everything else as-is:
+set-up server. It skips reinstalling sing-box/Caddy/qWDTT/Psiphon when
+each is already at (or, for sing-box/Caddy, past) its `VERSIONS` pin —
+a bare re-run doesn't redo qWDTT's Go build or Psiphon's download.
+Updated one manually via `manage.sh`'s menu? That's never rolled back
+on the next re-run — see "Upstream versions are pinned" below.
+Configs regenerate and everything else stays as-is:
 
 - `DOMAIN`, `SSH_PORT`, `PSIPHON_EGRESS_REGION` — read back from the
   live server, not asked again.
@@ -116,7 +119,17 @@ Upstream versions are pinned in `VERSIONS`, not floating — a release
 behaves the same on every server it runs on. A weekly workflow
 (`dep-bump.yml`) opens a PR when upstream moves, gated by CI. Need a
 newer version right now anyway? `manage.sh`'s update menu still grabs
-latest for one binary at a time, no compatibility guarantee.
+latest for one binary at a time, no compatibility guarantee — and
+`bootstrap.sh` won't revert it: sing-box/Caddy stay put as long as
+they're at or past the pin, qWDTT/Psiphon are marked overridden and
+left alone until `FORCE_REINSTALL=qwdtt,psiphon` (comma-separated,
+name the ones you want back on the pin) says otherwise. That tracking
+only sees updates made through `manage.sh` — swap a qWDTT/Psiphon
+binary by hand outside of it and a later re-run may overwrite it,
+unless you also add `qwdtt`/`psiphon` (one per line) to
+`/var/lib/vps-bootstrap/overrides` yourself. sing-box/Caddy are
+safe either way, since those are checked by actual installed version,
+not a record of how they got there.
 
 Changing `DOMAIN` on a re-run issues a new certificate and leaves the
 old one behind — never deleted automatically (Let's Encrypt allows
