@@ -100,50 +100,35 @@ blocked, there's somewhere to switch to without reinstalling anything.
 
 ## Re-running updates everything in place
 
-`bootstrap.sh` can be re-run with no variables at all on an already
-set-up server. It skips reinstalling sing-box/Caddy/qWDTT/Psiphon when
-each is already at (or, for sing-box/Caddy, past) its `VERSIONS` pin —
-a bare re-run doesn't redo qWDTT's Go build or Psiphon's download.
-Updated one manually via `manage.sh`'s menu? That's never rolled back
-on the next re-run — see "Upstream versions are pinned" below.
-Configs regenerate and everything else stays as-is:
+Safe to re-run with no variables on an already set-up server — skips
+reinstalling anything already at its `VERSIONS` pin (so a bare re-run
+doesn't redo qWDTT's Go build or Psiphon's download), regenerates
+configs, leaves the rest as-is:
 
-- `DOMAIN`, `SSH_PORT`, `PSIPHON_EGRESS_REGION` — read back from the
-  live server, not asked again.
+- `DOMAIN`/`SSH_PORT`/`PSIPHON_EGRESS_REGION` — read back live, not
+  asked again.
 - `EMAIL` — skipped once a certificate already exists.
-- Clients — carried forward exactly as they are. `bootstrap.sh` never
-  creates or touches them; that's `manage.sh`'s job.
+- Clients — carried forward untouched; `bootstrap.sh` never
+  creates/touches them, that's `manage.sh`'s job.
 - `MIN_THROUGHPUT_KBPS` — kept if it's been tuned away from default.
 
-Upstream versions are pinned in `VERSIONS`, not floating — a release
-behaves the same on every server it runs on. A weekly workflow
-(`dep-bump.yml`) opens a PR when upstream moves, gated by CI. Need a
-newer version right now anyway? `manage.sh`'s update menu still grabs
-latest for one binary at a time, no compatibility guarantee — and
-`bootstrap.sh` won't revert it: sing-box/Caddy stay put as long as
-they're at or past the pin, qWDTT/Psiphon are marked overridden and
-left alone until `FORCE_REINSTALL=qwdtt,psiphon` (comma-separated,
-name the ones you want back on the pin) says otherwise. That tracking
-only sees updates made through `manage.sh` — swap a qWDTT/Psiphon
-binary by hand outside of it and a later re-run may overwrite it,
-unless you also add `qwdtt`/`psiphon` (one per line) to
-`/var/lib/vps-bootstrap/overrides` yourself. sing-box/Caddy are
-safe either way, since those are checked by actual installed version,
-not a record of how they got there.
+Versions are pinned in `VERSIONS`, not floating — a weekly
+(`dep-bump.yml`) PR opens when upstream moves, gated by CI. A manual
+update via `manage.sh`'s menu is never rolled back on the next re-run
+(sing-box/Caddy by comparing the real installed version; qWDTT/Psiphon
+by an override flag, `FORCE_REINSTALL=qwdtt,psiphon` forces them back
+onto the pin) — see the comments around `is_overridden`/`FORCE_REINSTALL`
+in `bootstrap.sh` for the exact mechanics if you ever need them.
 
-Changing `DOMAIN` on a re-run issues a new certificate and leaves the
-old one behind — never deleted automatically (Let's Encrypt allows
-only 5 issuances per domain per week). The script prints the exact
-`certbot delete` command if you want it gone. Existing clients will
-need their connection info re-sent with the new domain.
+Changing `DOMAIN` issues a new certificate and leaves the old one
+behind (never auto-deleted — Let's Encrypt allows only 5/week); the
+script prints the `certbot delete` command. Existing clients need
+their link re-sent with the new domain.
 
-Binaries update without touching a running process: `caddy-naive`/
-`wdtt` stop before replace and restart after, Psiphon's binary swaps
-atomically, sing-box goes through its own `.deb` installer.
-
-One thing to know: `ufw-setup.sh` reinstalls the `ufw` package on every
-run, which means a brief window with the firewall down. Fine on a new
-machine, worth knowing on one already in use.
+Binaries swap without downtime (stop/replace/restart, or an atomic
+`mv`). One gotcha: `ufw-setup.sh` reinstalls the `ufw` package every
+run — a brief firewall-down window, harmless on a fresh box, worth
+knowing on one already serving traffic.
 
 ## Versioning
 
