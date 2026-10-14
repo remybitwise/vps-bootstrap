@@ -10,7 +10,7 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
-## [Unreleased]
+## [2.3.0] - 2026-10-14
 
 `vps-manage`'s menu, reshuffled: dropped "Tail watchdog log" and
 "Restart sing-box/caddy-naive/wdtt" (both trivially doable by hand over
