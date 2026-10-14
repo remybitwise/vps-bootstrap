@@ -1,46 +1,35 @@
 #!/usr/bin/env bash
 # psiphon-watchdog — native (no Docker) port of Chara-Freedom/vps-psiphon's
-# watchdog, re-synced 2026-10 against their current logic. One deliberate
-# departure from upstream: the Google-verdict source is ads.google.com's
-# locale redirect (our own earlier addition), not YouTube's embedded GL
-# field — dropped entirely in this re-sync, since serverRegion + Gemini
-# together already cover what it was triangulating for, without a second
-# full-page fetch that breaks if Google changes its markup.
+# watchdog, re-synced 2026-10. Departure from upstream: the Google-verdict
+# source is ads.google.com's locale redirect, not YouTube's GL field —
+# dropped, since serverRegion + Gemini already cover the same ground.
 #
 # Rotation triggers, in order of certainty:
-#   1. socks-dead         — SOCKS does not answer at all.
+#   1. socks-dead         — SOCKS doesn't answer at all.
 #   2. denied-country     — ads.google.com places the exit in DENY_REGIONS.
-#      Checked first, in every mode.
-#   3. country-mismatch   — the ads.google.com verdict isn't the region
-#      Psiphon itself reports for the connected server
-#      (ConnectedServerRegion in notices.log). The disagreement is the
-#      signal — no allow-list of regions needed.
-#   4. stalled-tunnel     — SOCKS answers, but the throughput probe below
+#      Checked first, every mode.
+#   3. country-mismatch   — ads.google.com's verdict disagrees with
+#      ConnectedServerRegion in notices.log. The disagreement is the
+#      signal, no allow-list needed.
+#   4. stalled-tunnel     — SOCKS answers but the throughput probe
 #      (a download, not a page) never completes.
-#   5. slow-tunnel        — the throughput probe completes under the floor.
-#      Judged over FAIL_THRESHOLD consecutive checks — a slow exit often
-#      recovers on its own; everything above rotates on its first
-#      occurrence, since those essentially never do.
-#   6. gemini-refused     — asked at the first check of every new tunnel,
-#      then every GEMINI_CHECK_SEC; Gemini keeps a geo-check of its own
-#      that nothing above can see. A refusal (error 1060) is decisive.
+#   5. slow-tunnel        — probe completes under the floor, judged over
+#      FAIL_THRESHOLD checks (a slow exit often recovers on its own;
+#      everything above rotates on first occurrence since those don't).
+#   6. gemini-refused     — checked on every new tunnel and then every
+#      GEMINI_CHECK_SEC; a refusal (error 1060) is decisive.
 #   - captcha is logged, never rotates on its own.
-#   - no cooldown: a cooldown can only delay a rotation, never prevent one,
-#     and the exit it would protect is already known bad.
-#   - MAX_UPTIME_SEC forces a plain restart (same region, fresh exit IP)
-#     once a tunnel gets old, regardless of any check passing — bounds
-#     exposure to a stale verdict in some other Google database that
-#     nothing above can read.
+#   - no cooldown — it could only delay a rotation, never prevent one.
+#   - MAX_UPTIME_SEC forces a plain restart once a tunnel gets old,
+#     regardless of checks passing, bounding exposure to a stale verdict
+#     elsewhere that nothing above can read.
 #
-# Direct-VPS fallback: a single region failing proves nothing about
-# Psiphon as a whole, so this needs REGION_SWEEPS_BEFORE_DIRECT full
-# passes through REGION_POOL — every region tried and rotated away from
-# in a row — before Google traffic gets routed directly from this VPS's
-# own IP instead (via singbox-google-route). Switches back the moment one
-# region checks clean twice in a row (region_cycle_fails/via_direct/
-# clean_streak in watchdog.state). psiphon.service's OnFailure= also
-# fires this watchdog immediately on an actual crash, not just on the
-# timer — see psiphon.service.
+# Direct-VPS fallback: one region failing proves nothing about Psiphon as
+# a whole, so this needs REGION_SWEEPS_BEFORE_DIRECT full passes through
+# REGION_POOL before Google traffic routes directly from this VPS's own
+# IP (via singbox-google-route). Switches back once one region checks
+# clean twice in a row. psiphon.service's OnFailure= also fires this
+# immediately on a crash, not just on the timer.
 set -uo pipefail
 
 . /etc/default/psiphon-watchdog
@@ -53,14 +42,10 @@ S=(--socks5-hostname "127.0.0.1:${SOCKS_PORT}")
 log() { printf '%s %s\n' "$(date -Is)" "$*" >> "$LOG"; }
 
 fails=0; last_gemini=0; gemini_tunnel=""; captcha=0
-# region_cycle_fails: consecutive ROTATIONS (not checks) that ended in
-# failure — reset by any clean check, incremented each time this run
-# rotates to the next region. via_direct: are we currently routing
-# Google traffic directly from this VPS instead of through Psiphon.
-# clean_streak: consecutive clean checks while via_direct=1, counted
-# toward switching back — see the REGION_SWEEPS_BEFORE_DIRECT comment in
-# /etc/default/psiphon-watchdog for why a single region failing (or
-# recovering) isn't enough on its own.
+# region_cycle_fails: consecutive ROTATIONS (not checks) that failed.
+# via_direct: routing Google traffic directly from this VPS right now?
+# clean_streak: clean checks in a row while via_direct=1, toward
+# switching back (see REGION_SWEEPS_BEFORE_DIRECT above).
 region_cycle_fails=0; via_direct=0; clean_streak=0
 # shellcheck disable=SC1090
 [ -r "$STATE" ] && . "$STATE"

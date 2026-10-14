@@ -1,24 +1,13 @@
 #!/usr/bin/env bash
-# install.sh — one-command launcher: fetches this repo as a tarball (no
-# git required) and hands off to bootstrap.sh. Works the same way for a
-# fresh VPS (first install) and for an already-configured one (update) —
-# bootstrap.sh itself is purely parameter-driven with no prompts of its
-# own, so this is the one place that asks a human for whatever's
-# actually missing, and only when it's actually missing.
+# install.sh — fetches this repo as a tarball (no git needed) and hands
+# off to bootstrap.sh. Same command for a fresh install and an update;
+# it's the only place that prompts, and only for what's actually missing.
 #
 #   DOMAIN=your.domain EMAIL=you@mail PSIPHON_EGRESS_REGION=NL \
 #     bash <(curl -fsSL https://raw.githubusercontent.com/remybitwise/vps-bootstrap/master/install.sh)
 #
-# On an update, run the exact same line with nothing set at all — a
-# server that's already bootstrapped once never gets asked anything
-# here; bootstrap.sh reads DOMAIN/SSH_PORT/PSIPHON_EGRESS_REGION back
-# from what's already live and skips EMAIL entirely once a certificate
-# already exists.
-#
-# Pinned to the latest GitHub release by default — not a moving
-# "master" HEAD — so "install" (or "update") means a specific,
-# deliberate version. Override with VPS_BOOTSTRAP_REF=<tag|branch|commit>
-# to use something else.
+# Pinned to the latest GitHub release by default. Override with
+# VPS_BOOTSTRAP_REF=<tag|branch|commit>.
 set -euo pipefail
 
 REPO="remybitwise/vps-bootstrap"
@@ -33,11 +22,8 @@ if [ -z "$REF" ]; then
   fi
 fi
 
-# Already bootstrapped once (this file is only ever written by a fully
-# successful bootstrap.sh run) — an update, not a first install. Nothing
-# below is worth asking a human for: DOMAIN/SSH_PORT/PSIPHON_EGRESS_REGION
-# all come back from the live state anyway, and EMAIL is skipped once a
-# certificate exists.
+# This file only exists after a successful bootstrap.sh run — if it's
+# there, nothing below is worth asking about.
 ALREADY_BOOTSTRAPPED=0
 [ -f /etc/vps-bootstrap-version ] && ALREADY_BOOTSTRAPPED=1
 

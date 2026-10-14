@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
 # regen-caddyfile.py <domain> <sing_box_config> <caddyfile_path>
-# Used only from bootstrap.sh, on first deployment. manage.sh (day-to-day
-# client management on an already-running server) keeps its own
-# independent copy of the same logic — it's self-contained, no external
-# dependencies, see its header.
-# The list of naive clients comes from sing-box's own config (its
-# naive-in inbound's users) — the one place clients are added or removed
-# (via manage.sh), so the Caddyfile always matches exactly who sing-box
-# will actually accept.
+# Used only from bootstrap.sh's first deployment — manage.sh keeps its
+# own copy of the same logic for day-to-day use.
+# Naive clients come from sing-box's own config, so the Caddyfile
+# always matches exactly who sing-box will actually accept.
 import base64
 import json
 import re
@@ -15,13 +11,9 @@ import sys
 
 domain, sing_box_config, caddyfile_path = sys.argv[1:4]
 
-# bootstrap.sh calls this before sing-box's own config exists yet on a
-# first run (Caddy is set up one step before sing-box) — but the package
-# install (step 0, earlier) can leave its own stock example config.json
-# at this same path, with a shape that's not ours at all (no "tag" on
-# its inbounds). Either way — no file, or a file that isn't the one
-# bootstrap.sh itself writes — means no naive users yet, same as any
-# other first-run default.
+# No file yet (first run, Caddy comes before sing-box's own config) or
+# a file that's sing-box's own stock example (no "tag" on its inbounds)
+# — either way, treat it as no naive users yet.
 try:
     d = json.load(open(sing_box_config))
     naive_users = next((i.get("users", []) for i in d.get("inbounds", []) if i.get("tag") == "naive-in"), [])

@@ -1,22 +1,14 @@
 #!/usr/bin/env bash
-# manage.sh — self-contained interactive server-management menu: clients
-# (Reality/naive/qWDTT, each addable/removable independently), Psiphon
-# (status/change exit IP/change region), service status/restart, and
-# updating sing-box/Caddy/qWDTT/Psiphon to their latest versions without
-# re-running the whole of bootstrap.sh (so no firewall/fail2ban/nginx
-# changes, and no need to remember bootstrap.sh's required env vars).
+# manage.sh — interactive server-management menu: clients (Reality/
+# naive/qWDTT, independently), Psiphon status/exit-IP/region, service
+# status/restart, and updating binaries without a full bootstrap.sh run.
 #
-# Self-contained on purpose: everything needed lives in this one file, no
-# sibling scripts required. The one external dependency kept is
-# /usr/local/sbin/psiphon-advance-region — that's a core part of the
-# already-deployed Psiphon watchdog subsystem (psiphon-watchdog.sh itself
-# depends on it too), not a convenience script of this toolset, so it's
-# not duplicated here.
+# Self-contained, no sibling scripts — except psiphon-advance-region,
+# already part of the deployed watchdog, so not duplicated here.
 #
-# Deliberately no `set -e` at the top level — this is an interactive loop,
-# one failed operation should not kill the whole menu. Each client
-# operation below runs in a `(set -e; ...)` subshell instead, so it aborts
-# cleanly on its own first error without taking the menu down with it.
+# No `set -e` at the top level: this is an interactive loop, one failed
+# operation shouldn't kill the menu. Each operation runs in its own
+# `(set -e; ...)` subshell instead.
 
 SECRETS_FILE="/root/.vps-bootstrap-secrets.env"
 SING_BOX_CONFIG=/etc/sing-box/config.json

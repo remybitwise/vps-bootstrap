@@ -21,11 +21,8 @@ DEBIAN_FRONTEND=noninteractive apt install -y ufw
 # for 'input'" on the next command.
 grep -qE '^DEFAULT_INPUT_POLICY="' /etc/default/ufw || { echo "ERROR: /etc/default/ufw still looks broken, investigate by hand (grep DEFAULT_INPUT_POLICY /etc/default/ufw)"; exit 1; }
 
-# IPv6 is deliberately unused in this setup (nginx/services only listen on
-# IPv4) — disable IPv6 management in ufw itself; full kernel-level
-# disabling is done by harden-server.sh (run that too, order relative to
-# this script doesn't matter). Smaller surface, less chance of anything
-# ending up reachable over IPv6 with no firewall rule covering it.
+# IPv6 unused here (nginx/services only listen on IPv4) — disable it in
+# ufw too. harden-server.sh disables it at the kernel level as well.
 sed -i 's/^IPV6=.*/IPV6=no/' /etc/default/ufw
 
 ufw default deny incoming

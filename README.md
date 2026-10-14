@@ -4,44 +4,36 @@
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
 [![Dependency bump check](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml)
 
-- **sing-box** — VLESS+Reality (disguised as a plain HTTPS site,
-  "selfsteal": invalid connections are transparently forwarded to a real
-  site) + built-in **naive** — a second, independent path, a regular
-  HTTPS proxy disguised as browser traffic.
-- **Caddy** — in front of naive: filters requests (only the right login/
-  password gets through), everything else gets the decoy page — looks
-  from the outside like an ordinary, slightly unfinished personal site.
-- **qWDTT** — a second camouflage protocol (WireGuard disguised as a VK
-  call), for the "only allow-listed domains reachable" mode, where normal
-  VPN traffic doesn't get through at all.
-- **Psiphon** — a second outbound path for Google services: handles the
-  case where Google flags the VPS's IP as being in a restricted country,
-  with a watchdog that checks this and rotates the exit on degradation.
-- **Firewall, base kernel hardening, fail2ban** — ports closed except the
-  ones needed, BBR, security auto-updates, bans for password brute-force.
+- **sing-box** — VLESS+Reality (looks like a plain HTTPS site; invalid
+  connections get forwarded to a real site) plus built-in **naive**, a
+  second proxy disguised as regular browser traffic.
+- **Caddy** — sits in front of naive, filters by login/password, wrong
+  creds get a decoy page that looks like an ordinary unfinished site.
+- **qWDTT** — second camouflage protocol (WireGuard disguised as a VK
+  call), for networks where only allow-listed domains are reachable.
+- **Psiphon** — second outbound path for Google traffic, for when
+  Google flags the VPS's IP as being in a restricted country.
+- **Firewall, kernel hardening, fail2ban** — closed ports, BBR, auto
+  security updates, brute-force bans.
 
 ## Before running
 
-1. **SSH is already set up by hand** — the key works, the port's been
-   changed, password login is off. The one step the script doesn't do
-   itself — see `SSH-HARDENING.md` next to this file and why it's left
-   manual.
-2. **A domain is bought and its A record points at this VPS.** One domain
-   for everything — both for naive and as cover for Reality.
-3. `EMAIL` — for Let's Encrypt, only needed to issue the certificate.
+1. **SSH already set up by hand** — key works, port changed, password
+   login off. See `SSH-HARDENING.md`, the one step this doesn't automate.
+2. **A domain bought, A record pointing at this VPS.** Used for both
+   naive and as cover for Reality.
+3. `EMAIL` — for Let's Encrypt.
 
 ## Running it
 
-Don't have this repo checked out yet? `install.sh` fetches it (a
-tarball, no `git` needed, pinned to the latest release) and runs
-`bootstrap.sh` for you, asking for anything you didn't set as an env var:
+No repo checked out yet? `install.sh` fetches it and runs `bootstrap.sh`
+for you, asking only for what you haven't set as an env var:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/remybitwise/vps-bootstrap/master/install.sh)
 ```
 
-Already have it checked out? Run `bootstrap.sh` directly — same inputs,
-no fetching:
+Already checked out? Run `bootstrap.sh` directly:
 
 ```bash
 DOMAIN=your.domain \
@@ -50,46 +42,32 @@ PSIPHON_EGRESS_REGION=NL \
 bash bootstrap.sh
 ```
 
-Either way: `SSH_PORT` isn't listed above — it's read straight off
-whatever sshd is actually listening on, set up by hand per
-`SSH-HARDENING.md` before this ever runs. Set it explicitly only if you
-need to override that for some reason. `bootstrap.sh` never prompts for
-anything itself (so it stays predictable on a re-run) — `install.sh` is
-the one place that asks, and only for whatever a first run still needs.
+`SSH_PORT` isn't listed — it's read off whatever sshd is actually
+listening on. Set it explicitly only to override that. `bootstrap.sh`
+never prompts for anything; `install.sh` is the only place that asks,
+and only for what a first run still needs.
 
 Optional:
 - `WDTT_DTLS_PORT` / `WDTT_WG_PORT` / `WDTT_TPROXY_PORT` — qWDTT ports,
-  default `48219` / `48220` / `12345` (not the tool's default ports
-  56000/56001 — those are the first thing mass scanning checks).
+  default `48219` / `48220` / `12345` (not the tool's own defaults
+  56000/56001 — those get hit by mass scanning first).
 
-This stands up the infrastructure with **nobody authorized to use it
-yet** — no Reality/naive/qWDTT clients. Add the first person with
-`manage.sh` once it finishes.
+First run stands up the infrastructure with **no clients yet**. Add the
+first one with `manage.sh`.
 
-Every value here (`DOMAIN`, `SSH_PORT`, `PSIPHON_EGRESS_REGION`) comes
-from an env var if you set one, or from whatever this VPS is already
-running if you don't — never from an interactive prompt; a genuinely
-first-time, nothing-set-up-yet run needs them spelled out (as above),
-anything after that needs none of them repeated, see "Re-running"
-below.
+## Managing the server
 
-## Managing the server after setup
-
-`manage.sh` — for day-to-day management of an already-running server:
+`manage.sh` — day-to-day management of an already-running server:
 
 ```bash
 bash manage.sh
 ```
 
-An interactive menu: add/remove a client (Reality/naive/qWDTT
-independently of each other), Psiphon status and exit IP/region changes,
-status and restart of sing-box/caddy-naive/wdtt, and updating
-sing-box/Caddy/qWDTT/Psiphon to their latest versions without re-running
-`bootstrap.sh` (so no firewall/fail2ban/nginx changes along the way).
-`bootstrap.sh` deploys the stack from scratch; it doesn't handle
-day-to-day management.
+Add/remove clients (Reality/naive/qWDTT, independently), Psiphon status
+and exit IP/region changes, service status/restart, and updating
+sing-box/Caddy/qWDTT/Psiphon without touching firewall/fail2ban/nginx.
 
-## How it all fits together
+## How it fits together
 
 ```
 Client → domain:443
@@ -110,84 +88,53 @@ Client → domain:443
     Google domains → Psiphon (127.0.0.1:11080, socks)
     everything else → directly from this VPS's own IP
 
-Separately, independently: qWDTT listens on its own port (DTLS,
-disguised as a VK call) → TPROXY wraps its traffic into the
-same sing-box → the same route.rules above, Psiphon for
-Google included.
+Separately: qWDTT listens on its own port (DTLS, disguised as a VK
+call) → TPROXY wraps its traffic into the same sing-box → same
+route.rules above, Psiphon for Google included.
 ```
 
-Two layers of camouflage (Reality/naive and qWDTT) — if one protocol
-starts getting fingerprinted and blocked, there's somewhere to switch to
-without reinstalling anything.
+Two independent camouflage protocols — if one gets fingerprinted and
+blocked, there's somewhere to switch to without reinstalling anything.
 
-## Re-running updates everything to current
+## Re-running updates everything in place
 
-`bootstrap.sh` can be re-run with **no variables at all** on an
-already-configured server — it installs sing-box/Caddy/qWDTT/Psiphon at
-the exact versions pinned in `VERSIONS` (never "latest" — see below) and
-fresh configs/units, but doesn't touch what can't be regenerated. The
-same `install.sh` one-liner from
-"Running it" works here too, unchanged — once `/etc/vps-bootstrap-version`
-exists (written by a successful run), it fetches the latest release and
-re-runs `bootstrap.sh` without asking anything at all, since there's
-nothing left for it to ask about:
+`bootstrap.sh` can be re-run with no variables at all on an already
+set-up server. It reinstalls sing-box/Caddy/qWDTT/Psiphon at the
+versions pinned in `VERSIONS`, regenerates configs, and leaves
+everything else as-is:
 
-- **`DOMAIN`** — read back from sing-box's own config (matched by its
-  `vless-reality-in` tag).
-- **`SSH_PORT`** — read from whatever sshd is actually listening on.
-- **`PSIPHON_EGRESS_REGION`** — the watchdog's rotation can move it; a
-  re-run reads the current value from the live `psiphon.config` instead
-  of rolling it back to whatever was passed on the first run.
-- **`EMAIL`** — not needed at all once a certificate already exists.
-- **Clients** — `bootstrap.sh` never creates or names them (that's
-  `manage.sh`'s job, always); a re-run carries forward exactly whoever
-  is already in sing-box's config, untouched. Nothing here to roll back
-  or regenerate.
-- **`MIN_THROUGHPUT_KBPS` calibration** — kept if it's no longer the
-  default. Every other variable in `/etc/default/psiphon-watchdog` comes
-  from a fresh template each time.
+- `DOMAIN`, `SSH_PORT`, `PSIPHON_EGRESS_REGION` — read back from the
+  live server, not asked again.
+- `EMAIL` — skipped once a certificate already exists.
+- Clients — carried forward exactly as they are. `bootstrap.sh` never
+  creates or touches them; that's `manage.sh`'s job.
+- `MIN_THROUGHPUT_KBPS` — kept if it's been tuned away from default.
 
-**Upstream versions are pinned, not floating.** `VERSIONS` fixes exactly
-which sing-box/Caddy/qWDTT/Psiphon version `bootstrap.sh` installs, so a
-release behaves the same on every server that runs it, update or not.
-Need a newer version right now anyway? `manage.sh`'s update menu still
-updates that one binary straight to whatever's actually latest
-upstream, same as always — no compatibility guarantee, which is exactly
-why that's a manual, one-binary-at-a-time action instead of what a
-plain re-run does.
+Upstream versions are pinned in `VERSIONS`, not floating — a release
+behaves the same on every server it runs on. A weekly workflow
+(`dep-bump.yml`) opens a PR when upstream moves, gated by CI. Need a
+newer version right now anyway? `manage.sh`'s update menu still grabs
+latest for one binary at a time, no compatibility guarantee.
 
-A weekly workflow (`dep-bump.yml`) checks upstream for newer versions
-and opens a PR bumping `VERSIONS` if it finds any — the normal CI run
-on that PR is the real gate, merging it is a deliberate choice like any
-other change.
+Changing `DOMAIN` on a re-run issues a new certificate and leaves the
+old one behind — never deleted automatically (Let's Encrypt allows
+only 5 issuances per domain per week). The script prints the exact
+`certbot delete` command if you want it gone. Existing clients will
+need their connection info re-sent with the new domain.
 
-Changing `DOMAIN` on a re-run (a deliberate, rare operation — needs the
-new domain's DNS already pointed here) issues a new certificate and
-leaves the old one behind, unused. It's never deleted automatically
-(Let's Encrypt allows only 5 issuances per domain per week, so an
-automatic delete could cost a real retry if the change ever gets
-reverted) — the script just points it out, with the exact command to
-remove it by hand if you're done with it. Every existing client's
-connection info has the old domain baked in and will need to be handed
-out again with the new one.
+Binaries update without touching a running process: `caddy-naive`/
+`wdtt` stop before replace and restart after, Psiphon's binary swaps
+atomically, sing-box goes through its own `.deb` installer.
 
-Binaries update safely, not over a running process: `caddy-naive`/`wdtt`
-are stopped before being replaced/rebuilt and started again, the Psiphon
-binary is swapped atomically (`mv`), sing-box goes through the official
-`.deb` installer.
-
-One detail worth knowing: `ufw-setup.sh` fully reinstalls the `ufw`
-package on every run (purge → install) — on a re-run this is a brief
-window where the firewall is temporarily down. Not an issue on a new
-machine, but worth knowing on a server already in use.
+One thing to know: `ufw-setup.sh` reinstalls the `ufw` package on every
+run, which means a brief window with the firewall down. Fine on a new
+machine, worth knowing on one already in use.
 
 ## Versioning
 
 [`VERSION`](VERSION) and [`CHANGELOG.md`](CHANGELOG.md) follow
-[Semantic Versioning](https://semver.org/) — a MAJOR bump means
-something `bootstrap.sh`/`manage.sh` generate or parse changed shape
-(sing-box config fields, `/etc/default/psiphon-watchdog` variable
-names, `passwords.json` schema), the kind of change a re-run could
-silently misread. `bootstrap.sh` stamps the version it deployed to
-`/etc/vps-bootstrap-version` on a successful run; `manage.sh` shows it
+[Semantic Versioning](https://semver.org/) — MAJOR means something
+`bootstrap.sh`/`manage.sh` generate or parse changed shape, the kind of
+change a re-run could silently misread. `bootstrap.sh` stamps the
+deployed version to `/etc/vps-bootstrap-version`; `manage.sh` shows it
 in its menu header.

@@ -51,12 +51,8 @@ net.ipv4.tcp_max_tw_buckets = 1440000
 net.ipv4.tcp_fin_timeout = 15
 net.ipv4.ip_local_port_range = 10000 65535
 
-# IPv6 fully disabled — in this setup the services (nginx, sing-box) only
-# listen on IPv4, there's no outward need for IPv6 at all. Smaller
-# surface, less chance of accidentally leaving something reachable with
-# no firewall rule covering it (ufw-setup.sh also sets IPV6=no inside ufw
-# itself, duplicating this protection at the kernel level rather than
-# relying on ufw alone).
+# IPv6 disabled at the kernel level — nginx/sing-box only listen on
+# IPv4 anyway. ufw-setup.sh also sets IPV6=no, as a second layer.
 net.ipv6.conf.all.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 net.ipv6.conf.lo.disable_ipv6 = 1
@@ -68,9 +64,8 @@ echo "rp_filter: ${RP_FILTER_MODE} (1=strict, 2=loose)"
 echo "IPv6 disabled: $(sysctl -n net.ipv6.conf.all.disable_ipv6)"
 
 # -----------------------------------------------------------------------
-# 3. Security auto-updates — the README used to only say
-#    "apt install unattended-upgrades" without actually enabling it,
-#    which isn't enough — the package doesn't run itself on its own.
+# 3. Security auto-updates — installing the package alone doesn't run
+#    it, so enable it explicitly below too.
 # -----------------------------------------------------------------------
 apt install -y unattended-upgrades apt-listchanges
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'

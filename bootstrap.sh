@@ -2,22 +2,16 @@
 # bootstrap.sh — stands up the whole stack on a clean VPS: sing-box
 # (VLESS+Reality + naive), Caddy (naive camouflage + decoy), qWDTT
 # (whitelist bypass via TPROXY), Psiphon (second egress for Google) +
-# watchdog, firewall, base kernel hardening, fail2ban. Details — README.md
-# next to this file.
+# watchdog, firewall, kernel hardening, fail2ban. Details: README.md.
 #
-# Deliberately not in here: SSH key setup/hardening (see SSH-HARDENING.md
-# — needs a human watching a second session, easy to break beyond
-# recovery otherwise) and adding any clients (see manage.sh — this script
-# only ever stands up the infrastructure, with nobody authorized to use
-# it yet; add the first person with manage.sh once this finishes).
+# Not in here: SSH setup (SSH-HARDENING.md — needs a human watching a
+# second session) and adding clients (manage.sh — this script only
+# stands up infrastructure, nobody authorized yet).
 #
-# Every value below comes only from an env var, or — missing that — from
-# whatever this VPS is already running. Never from an interactive
-# prompt: a human-friendly first run belongs in install.sh, which asks
-# what it needs and then calls this script with everything resolved.
-# This one stays a plain, predictable function of its inputs, so a
-# re-run (update) on an already-configured server needs none of them
-# spelled out again.
+# No interactive prompts — every value comes from an env var or from
+# whatever this VPS is already running. install.sh is the one that
+# asks; this stays a plain function of its inputs so a re-run needs
+# nothing spelled out again.
 
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
@@ -45,11 +39,8 @@ fi
 DOMAIN="${DOMAIN:?set DOMAIN=your.domain (its A record must already point at this VPS)}"
 
 if [ -z "${SSH_PORT:-}" ]; then
-  # What sshd actually listens on right now — set up by hand per
-  # SSH-HARDENING.md before this script ever runs. Reading the live
-  # process rather than parsing sshd_config text: a config with no
-  # explicit Port line (meaning the default, 22) would otherwise look
-  # like nothing is configured at all, when the real answer is "22".
+  # Read the live process, not sshd_config text — a config with no
+  # explicit Port line means 22, not "unset".
   SSH_PORT="$(ss -tlnp 2>/dev/null | grep sshd \
     | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}:[0-9]+|\[.*\]:[0-9]+' \
     | grep -oE '[0-9]+$' | sort -u | head -1)"
@@ -63,11 +54,6 @@ if [ -z "${PSIPHON_EGRESS_REGION:-}" ] && [ -f "$PSIPHON_CONFIG_PATH" ]; then
 fi
 PSIPHON_EGRESS_REGION="${PSIPHON_EGRESS_REGION:?set PSIPHON_EGRESS_REGION=NL (two-letter code; Psiphon itself prints the full list to its log on first run, AvailableEgressRegions)}"
 
-# EMAIL is only ever used to issue a *new* certificate — nothing reads it
-# back, so there's nothing to detect. Required only when we're actually
-# about to call real certbot (not SKIP_CERTBOT, and no cert yet for
-# DOMAIN); a re-run with an existing cert needs it even less than the
-# others above.
 if [ "${SKIP_CERTBOT:-0}" != "1" ] && [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
   EMAIL="${EMAIL:?set EMAIL=your@email (used only for issuing the certificate)}"
 fi
@@ -76,7 +62,6 @@ WDTT_DTLS_PORT="${WDTT_DTLS_PORT:-48219}"
 WDTT_WG_PORT="${WDTT_WG_PORT:-48220}"
 WDTT_TPROXY_PORT="${WDTT_TPROXY_PORT:-12345}"
 
-# All templates live next to this script, in the same folder.
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SECRETS_FILE="/root/.vps-bootstrap-secrets.env"
 
@@ -170,10 +155,8 @@ else
   log "certificate for ${DOMAIN} already exists, skipping issuance"
 fi
 
-# A deliberate domain change leaves the old certificate behind, otherwise
-# unnoticed — never deleted automatically (Let's Encrypt only allows 5
-# issuances per domain per week, so an automatic delete could cost a
-# real retry later if the change ever gets reverted), just pointed out.
+# A domain change leaves the old certificate behind — never deleted
+# automatically (Let's Encrypt allows only 5 issuances/domain/week).
 if [ -d /etc/letsencrypt/live ]; then
   for cert_dir in /etc/letsencrypt/live/*/; do
     cert_name="$(basename "$cert_dir")"
@@ -193,18 +176,9 @@ id caddy >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/
 mkdir -p /etc/caddy /var/log/caddy /var/lib/caddy /var/www/html
 chown caddy:caddy /var/lib/caddy
 
-# Pinned (VERSIONS), downloaded directly instead of discovered through
-# api.github.com — that API is rate-limited per IP and GitHub Actions
-# runners share IPs, so it was flaking in CI; the release-asset URL
-# itself follows a fixed naming convention and needs no lookup once the
-# exact tag is already known. Stop before swapping the binary rather
-# than over a running process — restart after, below, together with
-# regenerating the Caddyfile. Several commands run between the stop and
-# the restart (Caddyfile regen, cert ACL/readability checks, caddy
-# validate); under set -e any one of them failing would otherwise kill
-# the script with caddy-naive left stopped and nothing to bring it back
-# — the trap below catches exactly that and is cleared once the real
-# restart below succeeds.
+# Pinned (VERSIONS), downloaded directly by URL — api.github.com is
+# rate-limited per IP and was flaking in CI on shared runner IPs.
+# Trap below restarts caddy-naive if anything fails before we do.
 curl -fsSL -o /tmp/caddy.tar.gz \
   "https://github.com/caddyserver/caddy/releases/download/${CADDY_VERSION}/caddy_${CADDY_VERSION#v}_linux_amd64.tar.gz"
 mkdir -p /tmp/caddy-extract
@@ -217,15 +191,8 @@ rm -rf /tmp/caddy.tar.gz /tmp/caddy-extract
 
 sed "s/REPLACE_WITH_YOUR_NAIVE_DOMAIN/${DOMAIN}/g" "$REPO_DIR/decoy-site/index.html" > /var/www/html/index.html
 
-# Caddyfile — one @naive matcher for all clients via header_regexp with OR
-# (several separate @naive blocks sharing one matcher name don't work —
-# "matcher is defined more than once"). Generator lives in
-# regen-caddyfile.py; manage.sh keeps its own copy of the same logic (it's
-# self-contained, no external files), but it doesn't exist yet on a first
-# deployment, hence the separate call here. Reads naive credentials
-# straight out of sing-box's own config (see step 6 below for why that's
-# the one source of truth for clients now), so it always matches exactly
-# who sing-box will actually accept, first run or re-run alike.
+# regen-caddyfile.py reads naive credentials straight from sing-box's
+# own config, so it always matches who sing-box actually accepts.
 python3 "$REPO_DIR/regen-caddyfile.py" "$DOMAIN" "$SING_BOX_CONFIG_PATH" /etc/caddy/Caddyfile
 
 chown -R caddy:caddy /etc/caddy
@@ -268,11 +235,8 @@ with open(secrets_file) as f:
         k, v = line.split("=", 1)
         env[k] = v
 
-# Clients are managed exclusively through manage.sh, never here — a
-# re-run carries the existing user lists forward untouched instead of
-# rebuilding them from any name list, so this script never needs to
-# know who they are. A first run (no config yet) starts both empty:
-# nobody is authorized until manage.sh adds them.
+# Clients are manage.sh's job, never this script's — carry the
+# existing user lists forward untouched. Empty on a first run.
 vless_users, naive_users = [], []
 try:
     old = json.load(open(config_path))
@@ -514,9 +478,8 @@ curl -fsSL -o /tmp/psiphon-tunnel-core.new \
 chmod 755 /tmp/psiphon-tunnel-core.new
 mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
 
-# Config — always a fresh template. PSIPHON_EGRESS_REGION was already
-# resolved to the live file's current value above (if there was one),
-# so a re-run can't roll back what the watchdog's rotation has moved.
+# Fresh template — PSIPHON_EGRESS_REGION was already resolved to the
+# live value above, so this can't undo the watchdog's rotation.
 sed "s/REPLACE_WITH_EGRESS_REGION/${PSIPHON_EGRESS_REGION}/" \
   "$REPO_DIR/psiphon.config" > /etc/psiphon/psiphon.config
 chown root:psiphon /etc/psiphon/psiphon.config
@@ -539,11 +502,8 @@ cp "$REPO_DIR/singbox-google-route.sh" /usr/local/sbin/singbox-google-route
 chmod 755 /usr/local/sbin/psiphon-watchdog /usr/local/sbin/psiphon-advance-region \
   /usr/local/sbin/psiphon-gemini-check /usr/local/sbin/singbox-google-route
 
-# Always a fresh template. EGRESS_REGION uses the same already-resolved
-# PSIPHON_EGRESS_REGION as psiphon.config above (they're meant to always
-# match). MIN_THROUGHPUT_KBPS is the one value here with no equivalent
-# upstream to resolve from — kept from the live file if it was ever
-# calibrated away from the template's default.
+# Fresh template every time. MIN_THROUGHPUT_KBPS has no upstream
+# source of truth, so it's kept if the live file was ever tuned.
 CURRENT_MIN_THROUGHPUT=""
 if [ -f /etc/default/psiphon-watchdog ]; then
   CURRENT_MIN_THROUGHPUT="$(grep -oE '^MIN_THROUGHPUT_KBPS=.*' /etc/default/psiphon-watchdog | cut -d= -f2)"
@@ -597,10 +557,8 @@ echo "No clients are authorized yet on a first run — add the first one there."
 
 echo
 if [ "$all_ok" = "1" ]; then
-  # Stamped only on a fully successful run — the file is meant to record
-  # what's actually running, not what a half-failed attempt tried to
-  # deploy. manage.sh and a future install.sh read this to warn before
-  # updating across a MAJOR version — see CHANGELOG.md for what that means.
+  # Stamped only on full success — records what's actually running,
+  # not what a half-failed attempt tried to deploy.
   cp "$REPO_DIR/VERSION" /etc/vps-bootstrap-version
   echo "Done, all services are active. (version $(cat "$REPO_DIR/VERSION"))"
 else
