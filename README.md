@@ -1,5 +1,6 @@
 # vps-bootstrap — stand up the whole stack in one run
 
+[![Release](https://img.shields.io/github/v/release/remybitwise/vps-bootstrap)](https://github.com/remybitwise/vps-bootstrap/releases/latest)
 [![CI](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/ci.yml)
 [![Dependency bump check](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml/badge.svg)](https://github.com/remybitwise/vps-bootstrap/actions/workflows/dep-bump.yml)
 
