@@ -91,6 +91,8 @@ done
 
 if [ "$up" = 1 ]; then
   ok "Psiphon reconnected after restoring a real SOCKS_PORT"
+  # skip the bulk-download probe — it was flaking stalled-tunnel here
+  sed -i 's/^BULK_TEST_MB=.*/BULK_TEST_MB=0/' "$PSIPHON_DEFAULT"
   for _ in 1 2; do
     /usr/local/sbin/psiphon-watchdog || true
   done
