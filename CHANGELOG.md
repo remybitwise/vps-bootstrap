@@ -10,7 +10,7 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
-## [Unreleased]
+## [2.2.0] - 2026-10-14
 
 `bootstrap.sh` now installs `manage.sh` to `/usr/local/sbin/vps-manage`
 (already on PATH), kept current on every re-run — no more needing the
