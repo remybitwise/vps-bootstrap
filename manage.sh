@@ -730,7 +730,7 @@ update_psiphon() {
   echo "Updating Psiphon..."
   local port; port="$(socks_port)"
   cp /usr/local/bin/psiphon-tunnel-core /usr/local/bin/psiphon-tunnel-core.bak
-  curl -fsSL -o /tmp/psiphon-tunnel-core.new \
+  curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/psiphon-tunnel-core.new \
     "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/master/linux/psiphon-tunnel-core-x86_64"
   chmod 755 /tmp/psiphon-tunnel-core.new
   mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core

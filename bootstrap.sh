@@ -473,7 +473,7 @@ chmod 700 /var/lib/psiphon
 # and mv into place (atomic swap) instead of curl -o straight to the
 # target path — that would rewrite the same inode, which is unsafe under
 # a running process.
-curl -fsSL -o /tmp/psiphon-tunnel-core.new \
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o /tmp/psiphon-tunnel-core.new \
   "https://raw.githubusercontent.com/Psiphon-Labs/psiphon-tunnel-core-binaries/${PSIPHON_REF}/linux/psiphon-tunnel-core-x86_64"
 chmod 755 /tmp/psiphon-tunnel-core.new
 mv /tmp/psiphon-tunnel-core.new /usr/local/bin/psiphon-tunnel-core
