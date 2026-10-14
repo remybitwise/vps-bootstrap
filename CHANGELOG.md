@@ -10,6 +10,12 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [2.2.1] - 2026-10-14
+
+The Psiphon binary download had no retry — a dropped connection
+partway through killed the whole `bootstrap.sh` run. Now retries up
+to 5 times on both the `bootstrap.sh` and `manage.sh` copies.
+
 ## [2.2.0] - 2026-10-14
 
 `bootstrap.sh` now installs `manage.sh` to `/usr/local/sbin/vps-manage`
