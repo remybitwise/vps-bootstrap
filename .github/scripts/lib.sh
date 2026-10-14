@@ -74,7 +74,14 @@ PYEOF
     local pid=$!
     sleep 2
     local code
-    code="$(curl -x socks5h://127.0.0.1:19001 -sS -o /dev/null -w '%{http_code}' --max-time 15 https://www.gstatic.com/generate_204 || echo 000)"
+    # retries: a lone SSL_ERROR_SYSCALL on the real hop to gstatic is a
+    # transient CI-network blip, not a regression — seen it self-resolve
+    # on every manual retry so far.
+    for _ in 1 2 3; do
+      code="$(curl -x socks5h://127.0.0.1:19001 -sS -o /dev/null -w '%{http_code}' --max-time 15 https://www.gstatic.com/generate_204 || echo 000)"
+      [ "$code" = "204" ] && break
+      sleep 2
+    done
     kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
     if [ "$code" = "204" ]; then
       ok "[$name] Reality reached gstatic (HTTP $code)"
@@ -88,7 +95,11 @@ PYEOF
     local pid=$!
     sleep 2
     local code
-    code="$(curl -x socks5h://127.0.0.1:19002 -sS -o /dev/null -w '%{http_code}' --max-time 15 https://www.gstatic.com/generate_204 || echo 000)"
+    for _ in 1 2 3; do
+      code="$(curl -x socks5h://127.0.0.1:19002 -sS -o /dev/null -w '%{http_code}' --max-time 15 https://www.gstatic.com/generate_204 || echo 000)"
+      [ "$code" = "204" ] && break
+      sleep 2
+    done
     kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
     if [ "$code" = "204" ]; then
       ok "[$name] naive reached gstatic (HTTP $code)"
