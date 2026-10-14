@@ -484,23 +484,50 @@ show_client_config() {
     return
   fi
 
+  echo "Show:"
+  echo "  1) Everything (links + JSON) [default]"
+  echo "  2) Links only"
+  echo "  3) JSON only (Reality/naive — qWDTT has no JSON form)"
+  local fmt show_links=1 show_json=1
+  read -rp "> " fmt
+  case "$fmt" in
+    2) show_json=0 ;;
+    3) show_links=0 ;;
+  esac
+
   local d; d="$(domain)"
+  local uuid="" pub="" sid="" naive_pass=""
 
   if [ "$has_r" = 1 ]; then
-    local uuid pub sid
     uuid="$(grep "^CLIENT_${name}_UUID=" "$SECRETS_FILE" | cut -d= -f2)"
     pub="$(grep '^REALITY_PUBLIC_KEY=' "$SECRETS_FILE" | cut -d= -f2)"
     sid="$(grep '^SHORT_ID=' "$SECRETS_FILE" | cut -d= -f2)"
+    if [ "$show_links" = 1 ]; then
+      echo
+      echo "${C_CYAN}=== '$name' — Reality ===${C_RESET}"
+      echo "vless://${uuid}@${d}:443?encryption=none&security=reality&sni=${d}&fp=chrome&pbk=${pub}&sid=${sid}&type=tcp&flow=xtls-rprx-vision#${name}-reality"
+    fi
+  fi
+
+  if [ "$has_n" = 1 ]; then
+    naive_pass="$(grep "^CLIENT_${name}_NAIVE_PASS=" "$SECRETS_FILE" | cut -d= -f2)"
+    if [ "$show_links" = 1 ]; then
+      echo
+      echo "${C_CYAN}=== '$name' — naive ===${C_RESET}"
+      echo "username=$name password=$naive_pass"
+    fi
+  fi
+
+  if [ "$show_json" = 1 ] && { [ "$has_r" = 1 ] || [ "$has_n" = 1 ]; }; then
     echo
-    echo "${C_CYAN}=== '$name' — Reality ===${C_RESET}"
-    echo "vless://${uuid}@${d}:443?encryption=none&security=reality&sni=${d}&fp=chrome&pbk=${pub}&sid=${sid}&type=tcp&flow=xtls-rprx-vision#${name}-reality"
-    echo
-    python3 - "$d" "$uuid" "$pub" "$sid" <<'PYEOF'
+    echo "${C_CYAN}=== '$name' — sing-box config ===${C_RESET}"
+    python3 - "$d" "$has_r" "$uuid" "$pub" "$sid" "$has_n" "$name" "$naive_pass" <<'PYEOF'
 import json, sys
-domain, uuid, pub, sid = sys.argv[1:5]
-print(json.dumps({
-    "outbounds": [{
-        "type": "vless", "tag": "proxy",
+domain, has_r, uuid, pub, sid, has_n, username, naive_pass = sys.argv[1:9]
+outbounds = []
+if has_r == "1":
+    outbounds.append({
+        "type": "vless", "tag": "proxy-reality",
         "server": domain, "server_port": 443,
         "uuid": uuid, "flow": "xtls-rprx-vision",
         "tls": {
@@ -508,29 +535,15 @@ print(json.dumps({
             "utls": {"enabled": True, "fingerprint": "chrome"},
             "reality": {"enabled": True, "public_key": pub, "short_id": sid},
         },
-    }],
-}, indent=2))
-PYEOF
-  fi
-
-  if [ "$has_n" = 1 ]; then
-    local pass
-    pass="$(grep "^CLIENT_${name}_NAIVE_PASS=" "$SECRETS_FILE" | cut -d= -f2)"
-    echo
-    echo "${C_CYAN}=== '$name' — naive ===${C_RESET}"
-    echo "username=$name password=$pass"
-    echo
-    python3 - "$d" "$name" "$pass" <<'PYEOF'
-import json, sys
-domain, username, password = sys.argv[1:4]
-print(json.dumps({
-    "outbounds": [{
-        "type": "naive", "tag": "proxy",
+    })
+if has_n == "1":
+    outbounds.append({
+        "type": "naive", "tag": "proxy-naive",
         "server": domain, "server_port": 443,
-        "username": username, "password": password,
+        "username": username, "password": naive_pass,
         "tls": {"enabled": True, "server_name": domain},
-    }],
-}, indent=2))
+    })
+print(json.dumps({"outbounds": outbounds}, indent=2))
 PYEOF
   fi
 
@@ -553,15 +566,20 @@ PYEOF
 
     echo
     echo "${C_CYAN}=== '$name' — qWDTT ===${C_RESET}"
-    [ -z "$vk_hash" ] && echo "vk_hash not set yet — add it in $WDTT_CONFIG before sharing these links."
+    # Only wdtt:// (iOS) needs vk_hash as a positional field — qwdtt://
+    # (Android) works without one, auto-joins a call in anonymous mode.
     echo "wdtt://${public_ip}:${dtls_port}:${wg_port}:9000:${wdtt_pass}:${vk_hash}"
+    [ -z "$vk_hash" ] && echo "(no vk_hash set — wdtt:// needs one, add it in $WDTT_CONFIG; qwdtt:// below works without it)"
     echo
     python3 - "$name" "$public_ip" "$dtls_port" "$vk_hash" "$wdtt_pass" <<'PYEOF'
 import sys
 from urllib.parse import quote
 name, ip, dtls_port, vk_hash, password = sys.argv[1:6]
-print(f"qwdtt://config?name={quote(name)}&peer={quote(f'{ip}:{dtls_port}')}"
-      f"&hashes={quote(vk_hash)}&workers=18&port=9000&pass={quote(password)}")
+link = f"qwdtt://config?name={quote(name)}&peer={quote(f'{ip}:{dtls_port}')}"
+if vk_hash:
+    link += f"&hashes={quote(vk_hash)}"
+link += f"&workers=18&port=9000&pass={quote(password)}"
+print(link)
 PYEOF
   fi
 }

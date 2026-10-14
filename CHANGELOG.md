@@ -10,6 +10,17 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [2.3.1] - 2026-10-14
+
+`show_client_config` (menu item 4): asks what to show (everything /
+links only / JSON only) before printing. Reality and naive now share
+one combined sing-box JSON (`proxy-reality`/`proxy-naive` tags) instead
+of two separate blocks. qWDTT's `vk_hash` requirement was only ever
+real for `wdtt://` (iOS, positional field) — `qwdtt://` (Android) omits
+`hashes=` entirely when none is set instead of warning about it; the
+qWDTT server itself never reads `vk_hash` either way (only the unused
+bot/admin API does).
+
 ## [2.3.0] - 2026-10-14
 
 `vps-manage`'s menu, reshuffled: dropped "Tail watchdog log" and
