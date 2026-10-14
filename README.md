@@ -64,9 +64,10 @@ already on PATH — kept current on every re-run:
 vps-manage
 ```
 
-Add/remove clients (Reality/naive/qWDTT, independently), Psiphon status
-and exit IP/region changes, service status/restart, and updating
-sing-box/Caddy/qWDTT/Psiphon without touching firewall/fail2ban/nginx.
+Add/remove clients (Reality/naive/qWDTT, independently), show a
+client's config (vless link + JSON), Psiphon status and exit IP/region
+changes, service status, and updating sing-box/Caddy/qWDTT/Psiphon
+without touching firewall/fail2ban/nginx.
 
 ## How it fits together
 

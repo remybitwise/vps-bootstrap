@@ -10,6 +10,8 @@
 # operation shouldn't kill the menu. Each operation runs in its own
 # `(set -e; ...)` subshell instead.
 
+C_BOLD=$'\033[1m'; C_CYAN=$'\033[1;36m'; C_GREEN=$'\033[1;32m'; C_RED=$'\033[1;31m'; C_YELLOW=$'\033[1;33m'; C_RESET=$'\033[0m'
+
 SECRETS_FILE="/root/.vps-bootstrap-secrets.env"
 SING_BOX_CONFIG=/etc/sing-box/config.json
 CADDYFILE=/etc/caddy/Caddyfile
@@ -17,7 +19,6 @@ WDTT_CONFIG=/etc/wdtt/passwords.json
 WDTT_SERVICE=/etc/systemd/system/wdtt.service
 PSIPHON_DEFAULT=/etc/default/psiphon-watchdog
 PSIPHON_CONFIG=/etc/psiphon/psiphon.config
-WATCHDOG_LOG=/var/log/psiphon/watchdog.log
 VERSION_FILE=/etc/vps-bootstrap-version
 
 [ "$(id -u)" = "0" ] || { echo "ERROR: run as root"; exit 1; }
@@ -469,6 +470,102 @@ remove_client() {
   [ "$rm_wdtt_flag" = 1 ] && remove_wdtt "$name"
 }
 
+show_client_config() {
+  local name
+  read -rp "Client name: " name
+  [ -z "$name" ] && { echo "Empty name, aborting."; return; }
+
+  local has_r=0 has_n=0 has_w=0
+  has_reality "$name" && has_r=1
+  has_naive "$name" && has_n=1
+  has_wdtt "$name" && has_w=1
+  if [ "$has_r" = 0 ] && [ "$has_n" = 0 ] && [ "$has_w" = 0 ]; then
+    echo "'$name' not found in Reality, naive, or qWDTT."
+    return
+  fi
+
+  local d; d="$(domain)"
+
+  if [ "$has_r" = 1 ]; then
+    local uuid pub sid
+    uuid="$(grep "^CLIENT_${name}_UUID=" "$SECRETS_FILE" | cut -d= -f2)"
+    pub="$(grep '^REALITY_PUBLIC_KEY=' "$SECRETS_FILE" | cut -d= -f2)"
+    sid="$(grep '^SHORT_ID=' "$SECRETS_FILE" | cut -d= -f2)"
+    echo
+    echo "${C_CYAN}=== '$name' — Reality ===${C_RESET}"
+    echo "vless://${uuid}@${d}:443?encryption=none&security=reality&sni=${d}&fp=chrome&pbk=${pub}&sid=${sid}&type=tcp&flow=xtls-rprx-vision#${name}-reality"
+    echo
+    python3 - "$d" "$uuid" "$pub" "$sid" <<'PYEOF'
+import json, sys
+domain, uuid, pub, sid = sys.argv[1:5]
+print(json.dumps({
+    "outbounds": [{
+        "type": "vless", "tag": "proxy",
+        "server": domain, "server_port": 443,
+        "uuid": uuid, "flow": "xtls-rprx-vision",
+        "tls": {
+            "enabled": True, "server_name": domain,
+            "utls": {"enabled": True, "fingerprint": "chrome"},
+            "reality": {"enabled": True, "public_key": pub, "short_id": sid},
+        },
+    }],
+}, indent=2))
+PYEOF
+  fi
+
+  if [ "$has_n" = 1 ]; then
+    local pass
+    pass="$(grep "^CLIENT_${name}_NAIVE_PASS=" "$SECRETS_FILE" | cut -d= -f2)"
+    echo
+    echo "${C_CYAN}=== '$name' — naive ===${C_RESET}"
+    echo "username=$name password=$pass"
+    echo
+    python3 - "$d" "$name" "$pass" <<'PYEOF'
+import json, sys
+domain, username, password = sys.argv[1:4]
+print(json.dumps({
+    "outbounds": [{
+        "type": "naive", "tag": "proxy",
+        "server": domain, "server_port": 443,
+        "username": username, "password": password,
+        "tls": {"enabled": True, "server_name": domain},
+    }],
+}, indent=2))
+PYEOF
+  fi
+
+  if [ "$has_w" = 1 ]; then
+    local wdtt_pass vk_hash dtls_port wg_port public_ip
+    read -r wdtt_pass vk_hash <<<"$(python3 - "$name" "$WDTT_CONFIG" <<'PYEOF'
+import json, sys
+name, config_path = sys.argv[1:3]
+d = json.load(open(config_path))
+for password, rec in d.get("passwords", {}).items():
+    if rec.get("label") == name:
+        print(password, rec.get("vk_hash") or "-")
+        break
+PYEOF
+)"
+    dtls_port="$(grep -oE -- '-listen [0-9.]+:[0-9]+' "$WDTT_SERVICE" | grep -oE '[0-9]+$')"
+    wg_port="$(grep -oE -- '-wg-port [0-9]+' "$WDTT_SERVICE" | grep -oE '[0-9]+$')"
+    public_ip="$(curl -s --max-time 10 https://api.ipify.org || echo '?')"
+    [ "$vk_hash" = "-" ] && vk_hash=""
+
+    echo
+    echo "${C_CYAN}=== '$name' — qWDTT ===${C_RESET}"
+    [ -z "$vk_hash" ] && echo "vk_hash not set yet — add it in $WDTT_CONFIG before sharing these links."
+    echo "wdtt://${public_ip}:${dtls_port}:${wg_port}:9000:${wdtt_pass}:${vk_hash}"
+    echo
+    python3 - "$name" "$public_ip" "$dtls_port" "$vk_hash" "$wdtt_pass" <<'PYEOF'
+import sys
+from urllib.parse import quote
+name, ip, dtls_port, vk_hash, password = sys.argv[1:6]
+print(f"qwdtt://config?name={quote(name)}&peer={quote(f'{ip}:{dtls_port}')}"
+      f"&hashes={quote(vk_hash)}&workers=18&port=9000&pass={quote(password)}")
+PYEOF
+  fi
+}
+
 # =========================================================================
 # Psiphon
 # =========================================================================
@@ -575,10 +672,6 @@ psiphon_rotate_region() {
   fi
 }
 
-watchdog_log_tail() {
-  tail -25 "$WATCHDOG_LOG" 2>/dev/null || echo "(log file not found)"
-}
-
 # =========================================================================
 # Services
 # =========================================================================
@@ -587,30 +680,15 @@ services_status() {
   local svc
   for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fail2ban; do
     if [ "$svc" = "wdtt" ] && ! systemctl is-enabled --quiet wdtt 2>/dev/null; then
-      echo "  --   wdtt (no qWDTT clients yet)"
+      echo "  ${C_YELLOW}--${C_RESET}   wdtt (no qWDTT clients yet)"
       continue
     fi
     if systemctl is-active --quiet "$svc"; then
-      echo "  OK   $svc"
+      echo "  ${C_GREEN}OK${C_RESET}   $svc"
     else
-      echo "  FAIL $svc"
+      echo "  ${C_RED}FAIL${C_RESET} $svc"
     fi
   done
-}
-
-restart_one_service() {
-  echo "Which service to restart?"
-  echo "  1) sing-box"
-  echo "  2) caddy-naive"
-  echo "  3) wdtt"
-  echo "  4) cancel"
-  read -rp "> " c
-  case "$c" in
-    1) systemctl restart sing-box && echo "sing-box restarted." ;;
-    2) systemctl restart caddy-naive && echo "caddy-naive restarted." ;;
-    3) systemctl restart wdtt && echo "wdtt restarted." ;;
-    *) echo "Cancelled." ;;
-  esac
 }
 
 # =========================================================================
@@ -776,33 +854,31 @@ update_all_binaries() {
 
 while true; do
   echo
-  echo "=== Server management ($(domain)) — version $(deployed_version) ==="
-  echo "Clients:"
+  echo "${C_BOLD}${C_CYAN}=== Server management ($(domain)) — version $(deployed_version) ===${C_RESET}"
+  echo "${C_CYAN}Clients:${C_RESET}"
   echo "  1) List clients"
   echo "  2) Add client"
   echo "  3) Remove client"
-  echo "Psiphon:"
-  echo "  4) Status (region / Google verdict / speed)"
-  echo "  5) Change exit IP (same region)"
-  echo "  6) Change region (next in the pool)"
-  echo "  7) Tail watchdog log"
-  echo "Services:"
+  echo "  4) Show client config (vless link + JSON)"
+  echo "${C_CYAN}Psiphon:${C_RESET}"
+  echo "  5) Status (region / Google verdict / speed)"
+  echo "  6) Change exit IP (same region)"
+  echo "  7) Change region (next in the pool)"
+  echo "${C_CYAN}Services:${C_RESET}"
   echo "  8) Status of all services"
-  echo "  9) Restart sing-box/caddy-naive/wdtt"
-  echo " 10) Update sing-box/Caddy/qWDTT/Psiphon to latest"
+  echo "  9) Update sing-box/Caddy/qWDTT/Psiphon to latest"
   echo "  0) Exit"
   read -rp "> " choice
   case "$choice" in
     1) list_clients ;;
     2) add_client ;;
     3) remove_client ;;
-    4) psiphon_status ;;
-    5) psiphon_restart_same_region ;;
-    6) psiphon_rotate_region ;;
-    7) watchdog_log_tail ;;
+    4) show_client_config ;;
+    5) psiphon_status ;;
+    6) psiphon_restart_same_region ;;
+    7) psiphon_rotate_region ;;
     8) services_status ;;
-    9) restart_one_service ;;
-    10) update_all_binaries ;;
+    9) update_all_binaries ;;
     0) exit 0 ;;
     *) echo "Unrecognized choice, pick an item from the list." ;;
   esac

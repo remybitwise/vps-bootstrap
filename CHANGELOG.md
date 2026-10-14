@@ -10,6 +10,15 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [Unreleased]
+
+`vps-manage`'s menu, reshuffled: dropped "Tail watchdog log" and
+"Restart sing-box/caddy-naive/wdtt" (both trivially doable by hand over
+SSH), added "Show client config" — prints an existing client's vless
+link + sing-box JSON for Reality/naive, and `wdtt://`/`qwdtt://` links
+for qWDTT. Menu item numbers shifted; anything scripting `manage.sh`'s
+stdin needs to account for that.
+
 ## [2.2.1] - 2026-10-14
 
 The Psiphon binary download had no retry — a dropped connection

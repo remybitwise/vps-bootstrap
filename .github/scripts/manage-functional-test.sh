@@ -69,21 +69,21 @@ d = json.load(open('$WDTT_CONFIG'))
 sys.exit(1 if any(v.get('label') == '$NEW_CLIENT' for v in d['passwords'].values()) else 0)
 " && ok "qWDTT: '$NEW_CLIENT' gone from passwords.json" || bad "qWDTT: '$NEW_CLIENT' still listed"
 
-echo "--- manage.sh: Psiphon status / services status / restart via menu ---"
-out="$(run_manage "4\n8\n9\n1\n0\n" 2>&1)"
+echo "--- manage.sh: Psiphon status / show client config / services status via menu ---"
+out="$(run_manage "5\n4\n${CLIENT_NAME}\n8\n0\n" 2>&1)"
 echo "$out"
 
 echo "$out" | grep -q "=== Psiphon ===" && ok "menu: Psiphon status ran" || bad "menu: Psiphon status did not print"
-echo "$out" | grep -q "sing-box restarted\." && ok "menu: sing-box restart via menu ran" || bad "menu: sing-box restart did not print confirmation"
-# $out is scoped to just this one menu run (4, 8, 9, 1, 0) — services_status
-# is the only thing in it that ever prints the word FAIL, so a plain,
-# unwindowed grep is both simpler and more precise than trying to isolate
-# its output by line count around the (repeated, per-redraw) menu text.
+echo "$out" | grep -q "vless://" && ok "menu: show client config printed a vless link" || bad "menu: show client config did not print a vless link"
+echo "$out" | grep -q '"type": "vless"' && ok "menu: show client config printed Reality JSON" || bad "menu: show client config did not print Reality JSON"
+echo "$out" | grep -q "wdtt://" && ok "menu: show client config printed a wdtt link" || bad "menu: show client config did not print a wdtt link"
+echo "$out" | grep -q "qwdtt://config" && ok "menu: show client config printed a qwdtt link" || bad "menu: show client config did not print a qwdtt link"
+# $out is scoped to just this one menu run (5, 4, CLIENT_NAME, 8, 0) —
+# services_status is the only thing in it that ever prints the word FAIL.
 if echo "$out" | grep -q "FAIL"; then bad "menu: services_status reported a FAIL"; else ok "menu: services_status reported no FAIL"; fi
-systemctl is-active --quiet sing-box && ok "sing-box active after menu restart" || bad "sing-box not active after menu restart"
 
-echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 10) ---"
-out="$(run_manage "10\nY\n0\n" 2>&1)"
+echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 9) ---"
+out="$(run_manage "9\nY\n0\n" 2>&1)"
 echo "$out"
 
 echo "$out" | grep -q "sing-box updated:" && ok "menu: sing-box update reported success" || bad "menu: sing-box update did not report success"
