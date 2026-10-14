@@ -10,6 +10,12 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [Unreleased]
+
+`bootstrap.sh` now installs `manage.sh` to `/usr/local/sbin/vps-manage`
+(already on PATH), kept current on every re-run — no more needing the
+repo checked out just to run it.
+
 ## [2.1.0] - 2026-10-14
 
 Upstream sing-box/Caddy/qWDTT/Psiphon versions are now pinned in

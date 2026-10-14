@@ -20,6 +20,12 @@ else
   bad "deployed version '$deployed_version' does not match repo VERSION '$repo_version'"
 fi
 
+if command -v vps-manage >/dev/null 2>&1; then
+  ok "vps-manage is installed and on PATH"
+else
+  bad "vps-manage is not on PATH"
+fi
+
 echo "--- Reality + naive: real client -> server -> Psiphon-out -> gstatic ---"
 test_client "$DOMAIN" "$CLIENT_NAME" || true
 

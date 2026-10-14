@@ -57,10 +57,11 @@ first one with `manage.sh`.
 
 ## Managing the server
 
-`manage.sh` — day-to-day management of an already-running server:
+`bootstrap.sh` installs its own copy to `/usr/local/sbin/vps-manage`,
+already on PATH — kept current on every re-run:
 
 ```bash
-bash manage.sh
+vps-manage
 ```
 
 Add/remove clients (Reality/naive/qWDTT, independently), Psiphon status

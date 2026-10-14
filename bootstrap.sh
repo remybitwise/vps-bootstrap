@@ -549,9 +549,12 @@ for svc in nginx caddy-naive sing-box wdtt psiphon psiphon-watchdog.timer ufw fa
   fi
 done
 
+cp "$REPO_DIR/manage.sh" /usr/local/sbin/vps-manage
+chmod 755 /usr/local/sbin/vps-manage
+
 echo
 echo "=== Managing clients, Psiphon, services ==="
-echo "bash $REPO_DIR/manage.sh — interactive menu (add/remove a client,"
+echo "vps-manage — interactive menu (add/remove a client,"
 echo "change Psiphon's exit IP/region, status and restart of services)."
 echo "No clients are authorized yet on a first run — add the first one there."
 
