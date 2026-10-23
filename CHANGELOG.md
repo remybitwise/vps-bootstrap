@@ -10,6 +10,23 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.0.0] - 2026-10-23
+
+**BREAKING:** the always-direct Google/YouTube toggle (2.4.0) now
+switches Reality, naive, and qWDTT independently per client instead of
+all-or-nothing. `CLIENT_<name>_ROUTE=direct` in the secrets file is
+gone — replaced by `CLIENT_<name>_ROUTE_REALITY`/`_NAIVE`/`_WDTT`.
+A server still on the old flag needs it migrated by hand (drop the old
+line, add the matching new one(s)) before re-running `bootstrap.sh`,
+or that client's direct routing silently reverts to the normal Psiphon
+switch on the next re-run.
+
+`manage.sh`'s toggle menu item now asks which protocol to flip for a
+client that has more than one (Reality/naive matched by `user` +
+`inbound` together now, not `user` alone — so naive stays on Psiphon
+while Reality goes direct, or vice versa). `list_clients` shows each
+protocol's routing state separately instead of one shared tag.
+
 ## [2.4.0] - 2026-10-23
 
 Google/YouTube routing now goes through a sing-box `selector` outbound

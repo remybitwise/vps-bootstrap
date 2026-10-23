@@ -65,10 +65,11 @@ vps-manage
 ```
 
 Add/remove clients (Reality/naive/qWDTT, independently), show a
-client's config (vless link + JSON), toggle a client onto always-direct
-Google/YouTube routing (bypassing Psiphon just for them), Psiphon
-status and exit IP/region changes, service status, and updating
-sing-box/Caddy/qWDTT/Psiphon without touching firewall/fail2ban/nginx.
+client's config (vless link + JSON), toggle a client's Reality, naive,
+and qWDTT independently onto always-direct Google/YouTube routing
+(bypassing Psiphon just for that protocol), Psiphon status and exit
+IP/region changes, service status, and updating sing-box/Caddy/qWDTT/
+Psiphon without touching firewall/fail2ban/nginx.
 
 ## How it fits together
 

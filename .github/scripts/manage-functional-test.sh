@@ -48,18 +48,20 @@ systemctl is-active --quiet wdtt && ok "wdtt still active after add" || bad "wdt
 echo "--- real connection check for the newly added client ---"
 test_client "$DOMAIN" "$NEW_CLIENT" || true
 
-echo "--- manage.sh: toggle Google/YouTube direct routing for '$NEW_CLIENT' ---"
-out="$(run_manage "5\n${NEW_CLIENT}\n1\n0\n" 2>&1)"
+echo "--- manage.sh: toggle Google/YouTube direct routing for '$NEW_CLIENT' (Reality only — must not touch naive) ---"
+# Sub-menu order for a Reality+naive+qWDTT client is 1=Reality 2=naive 3=qWDTT.
+out="$(run_manage "5\n${NEW_CLIENT}\n1\n1\n0\n" 2>&1)"
 echo "$out"
 echo "$out" | grep -q "always direct" && ok "menu: direct routing toggled on" || bad "menu: direct routing toggle-on did not report success"
-echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*google-direct" && ok "menu: list_clients shows google-direct tag" || bad "menu: list_clients missing google-direct tag"
-grep -q "^CLIENT_${NEW_CLIENT}_ROUTE=direct$" "$SECRETS_FILE" && ok "secrets: direct-route flag written" || bad "secrets: direct-route flag missing"
+echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*reality:direct" && ok "menu: list_clients shows reality:direct" || bad "menu: list_clients missing reality:direct"
+echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*naive:psiphon" && ok "menu: naive untouched (still psiphon)" || bad "menu: naive routing was affected by the Reality-only toggle"
+grep -q "^CLIENT_${NEW_CLIENT}_ROUTE_REALITY=direct$" "$SECRETS_FILE" && ok "secrets: direct-route flag written" || bad "secrets: direct-route flag missing"
 
-out="$(run_manage "5\n${NEW_CLIENT}\n1\n0\n" 2>&1)"
+out="$(run_manage "5\n${NEW_CLIENT}\n1\n1\n0\n" 2>&1)"
 echo "$out"
 echo "$out" | grep -q "normal Psiphon switch" && ok "menu: direct routing toggled off" || bad "menu: direct routing toggle-off did not report success"
-echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*google-direct" && bad "menu: list_clients still shows google-direct tag after toggle-off" || ok "menu: list_clients no longer shows google-direct tag"
-grep -q "^CLIENT_${NEW_CLIENT}_ROUTE=direct$" "$SECRETS_FILE" && bad "secrets: direct-route flag still present after toggle-off" || ok "secrets: direct-route flag gone"
+echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*reality:direct" && bad "menu: list_clients still shows reality:direct after toggle-off" || ok "menu: list_clients back to reality:psiphon"
+grep -q "^CLIENT_${NEW_CLIENT}_ROUTE_REALITY=direct$" "$SECRETS_FILE" && bad "secrets: direct-route flag still present after toggle-off" || ok "secrets: direct-route flag gone"
 
 systemctl is-active --quiet sing-box && ok "sing-box still active after routing toggle" || bad "sing-box not active after routing toggle"
 

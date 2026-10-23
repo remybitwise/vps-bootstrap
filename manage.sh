@@ -75,13 +75,13 @@ import json
 d = json.load(open('$SING_BOX_CONFIG'))
 reality = {u['name'] for i in d['inbounds'] if i['tag']=='vless-reality-in' for u in i['users']}
 naive = {u['username'] for i in d['inbounds'] if i['tag']=='naive-in' for u in i['users']}
-direct = {r['user'][0] for r in d['route']['rules'] if r.get('outbound') == 'direct' and r.get('user')}
+direct_reality = {r['user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['vless-reality-in'] and r.get('user')}
+direct_naive = {r['user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['naive-in'] and r.get('user')}
 for name in sorted(reality | naive):
-    tags = []
-    if name in reality: tags.append('reality')
-    if name in naive: tags.append('naive')
-    if name in direct: tags.append('google-direct')
-    print(f'  {name}: {\",\".join(tags)}')
+    parts = []
+    if name in reality: parts.append('reality:' + ('direct' if name in direct_reality else 'psiphon'))
+    if name in naive: parts.append('naive:' + ('direct' if name in direct_naive else 'psiphon'))
+    print(f'  {name}: {\" \".join(parts)}')
 " 2>/dev/null || echo "  (failed to read $SING_BOX_CONFIG)"
 
   echo
@@ -96,7 +96,7 @@ for v in w['passwords'].values():
     vk = 'yes' if v.get('vk_hash') else 'NO'
     dev = 'bound' if v.get('device_id') else 'not bound'
     ips = tuple(sorted(f\"{w['devices'][did]['ip']}/32\" for did in v.get('device_ids', []) if did in w.get('devices', {})))
-    tag = ', google-direct' if ips and ips in direct_ips else ''
+    tag = ', wdtt:' + ('direct' if ips and ips in direct_ips else 'psiphon') if ips else ''
     print(f\"  {v['label']}: vk_hash={vk}, device={dev}{tag}\")
 "
   else
@@ -107,7 +107,7 @@ for v in w['passwords'].values():
 ask_yn() {
   # ask_yn "prompt" default_letter -> echoes 1 or 0
   local prompt="$1" default="$2" ans
-  read -rp "$prompt " ans
+  read -rep "$prompt " ans
   ans=${ans:-$default}
   [[ "$ans" =~ ^[Yy]$ ]] && echo 1 || echo 0
 }
@@ -257,8 +257,8 @@ PYEOF
 
   echo
   echo "=== '$name' — done ==="
+  local pub="" sid=""
   if [ "$do_reality" = 1 ]; then
-    local pub sid
     pub="$(grep '^REALITY_PUBLIC_KEY=' "$SECRETS_FILE" | cut -d= -f2)"
     sid="$(grep '^SHORT_ID=' "$SECRETS_FILE" | cut -d= -f2)"
     echo "vless://${new_uuid}@$(domain):443?encryption=none&security=reality&sni=$(domain)&fp=chrome&pbk=${pub}&sid=${sid}&type=tcp&flow=xtls-rprx-vision#${name}-reality"
@@ -266,6 +266,31 @@ PYEOF
   if [ "$do_naive" = 1 ]; then
     echo "naive: username=$name password=$new_naive_pass"
   fi
+  python3 - "$(domain)" "$do_reality" "$new_uuid" "$pub" "$sid" "$do_naive" "$name" "$new_naive_pass" <<'PYEOF'
+import json, sys
+domain, has_r, uuid, pub, sid, has_n, username, naive_pass = sys.argv[1:9]
+outbounds = []
+if has_r == "1":
+    outbounds.append({
+        "type": "vless", "tag": "proxy-reality",
+        "server": domain, "server_port": 443,
+        "uuid": uuid, "flow": "xtls-rprx-vision",
+        "tls": {
+            "enabled": True, "server_name": domain,
+            "utls": {"enabled": True, "fingerprint": "chrome"},
+            "reality": {"enabled": True, "public_key": pub, "short_id": sid},
+        },
+    })
+if has_n == "1":
+    outbounds.append({
+        "type": "naive", "tag": "proxy-naive",
+        "server": domain, "server_port": 443,
+        "username": username, "password": naive_pass,
+        "tls": {"enabled": True, "server_name": domain},
+        "tcp_fast_open": True, "tcp_keep_alive": "30s",
+    })
+print(json.dumps({"outbounds": outbounds}, indent=2))
+PYEOF
 }
 
 add_reality_naive() {
@@ -447,7 +472,7 @@ remove_wdtt() {
 # =========================================================================
 
 add_client() {
-  read -rp "New client name: " name
+  read -rep "New client name: " name
   [ -z "$name" ] && { echo "Empty name, aborting."; return; }
 
   local add_reality add_naive add_wdtt_flag
@@ -462,7 +487,7 @@ add_client() {
 }
 
 remove_client() {
-  read -rp "Client name to remove from: " name
+  read -rep "Client name to remove from: " name
   [ -z "$name" ] && { echo "Empty name, aborting."; return; }
 
   local rm_reality rm_naive rm_wdtt_flag
@@ -478,7 +503,7 @@ remove_client() {
 
 show_client_config() {
   local name
-  read -rp "Client name: " name
+  read -rep "Client name: " name
   [ -z "$name" ] && { echo "Empty name, aborting."; return; }
 
   local has_r=0 has_n=0 has_w=0
@@ -495,7 +520,7 @@ show_client_config() {
   echo "  2) Links only"
   echo "  3) JSON only (Reality/naive — qWDTT has no JSON form)"
   local fmt show_links=1 show_json=1
-  read -rp "> " fmt
+  read -rep "> " fmt
   case "$fmt" in
     2) show_json=0 ;;
     3) show_links=0 ;;
@@ -548,6 +573,7 @@ if has_n == "1":
         "server": domain, "server_port": 443,
         "username": username, "password": naive_pass,
         "tls": {"enabled": True, "server_name": domain},
+        "tcp_fast_open": True, "tcp_keep_alive": "30s",
     })
 print(json.dumps({"outbounds": outbounds}, indent=2))
 PYEOF
@@ -591,62 +617,67 @@ PYEOF
 }
 
 has_direct_route() {
-  grep -q "^CLIENT_${1}_ROUTE=direct$" "$SECRETS_FILE" 2>/dev/null
+  # has_direct_route <name> <REALITY|NAIVE|WDTT>
+  grep -q "^CLIENT_${1}_ROUTE_${2}=direct$" "$SECRETS_FILE" 2>/dev/null
 }
 
 _do_toggle_direct_route() {
   set -euo pipefail
-  local name="$1" backup turning_on=1
-  has_direct_route "$name" && turning_on=0
+  local name="$1" proto="$2" backup turning_on=1
+  has_direct_route "$name" "$proto" && turning_on=0
 
   # Secrets first, same order as _do_add_reality_naive/_do_remove_reality_naive —
   # if systemctl restart below fails, secrets and config.json still agree
   # with each other instead of drifting apart.
   if [ "$turning_on" = 1 ]; then
-    echo "CLIENT_${name}_ROUTE=direct" >> "$SECRETS_FILE"
+    echo "CLIENT_${name}_ROUTE_${proto}=direct" >> "$SECRETS_FILE"
   else
-    sed -i "/^CLIENT_${name}_ROUTE=direct\$/d" "$SECRETS_FILE"
+    sed -i "/^CLIENT_${name}_ROUTE_${proto}=direct\$/d" "$SECRETS_FILE"
   fi
 
   backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
   cp "$SING_BOX_CONFIG" "$backup"
-  rule_added="$(python3 - "$name" "$turning_on" "$SING_BOX_CONFIG" "$WDTT_CONFIG" <<'PYEOF'
+  local rule_added
+  rule_added="$(python3 - "$name" "$proto" "$turning_on" "$SING_BOX_CONFIG" "$WDTT_CONFIG" <<'PYEOF'
 import json, os, sys
-name, turning_on, config_path, wdtt_config = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
-
-# qWDTT has no sing-box "user" (TPROXY traffic carries no auth identity)
-# — matched by its device(s)' assigned tunnel IP instead, from the same
-# file manage.sh's qWDTT functions already read.
-wdtt_ips = []
-if os.path.exists(wdtt_config):
-    w = json.load(open(wdtt_config))
-    device_ids = [did for pw in w.get("passwords", {}).values() if pw.get("label") == name
-                  for did in pw.get("device_ids", [])]
-    wdtt_ips = sorted(f"{w['devices'][did]['ip']}/32" for did in device_ids if did in w.get("devices", {}))
+name, proto, turning_on, config_path, wdtt_config = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4], sys.argv[5]
 
 d = json.load(open(config_path))
 rules = d["route"]["rules"]
-has_user = any(
-    i["tag"] in ("vless-reality-in", "naive-in")
-    and any(u.get("name") == name or u.get("username") == name for u in i["users"])
-    for i in d["inbounds"]
-)
-rules[:] = [
-    r for r in rules
-    if not (r.get("outbound") == "direct" and (r.get("user") == [name] or r.get("source_ip_cidr") == wdtt_ips))
-]
 added = 0
-if turning_on:
-    idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
-    new_rules = []
-    if has_user:
-        new_rules.append({"user": [name], "rule_set": ["google-geosite", "google-geoip"],
-                           "action": "route", "outbound": "direct"})
-    if wdtt_ips:
-        new_rules.append({"source_ip_cidr": wdtt_ips, "rule_set": ["google-geosite", "google-geoip"],
-                           "action": "route", "outbound": "direct"})
-    rules[idx:idx] = new_rules
-    added = len(new_rules)
+
+if proto in ("REALITY", "NAIVE"):
+    inbound_tag = "vless-reality-in" if proto == "REALITY" else "naive-in"
+    rules[:] = [
+        r for r in rules
+        if not (r.get("outbound") == "direct" and r.get("inbound") == [inbound_tag] and r.get("user") == [name])
+    ]
+    if turning_on:
+        idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
+        rules.insert(idx, {
+            "inbound": [inbound_tag], "user": [name],
+            "rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "direct",
+        })
+        added = 1
+else:
+    # qWDTT has no sing-box "user" (TPROXY traffic carries no auth
+    # identity) — matched by its device(s)' assigned tunnel IP instead.
+    w = json.load(open(wdtt_config)) if os.path.exists(wdtt_config) else {}
+    device_ids = [did for pw in w.get("passwords", {}).values() if pw.get("label") == name
+                  for did in pw.get("device_ids", [])]
+    ips = sorted(f"{w['devices'][did]['ip']}/32" for did in device_ids if did in w.get("devices", {}))
+    rules[:] = [
+        r for r in rules
+        if not (r.get("outbound") == "direct" and r.get("source_ip_cidr") == ips)
+    ]
+    if turning_on and ips:
+        idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
+        rules.insert(idx, {
+            "source_ip_cidr": ips, "rule_set": ["google-geosite", "google-geoip"],
+            "action": "route", "outbound": "direct",
+        })
+        added = 1
+
 json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
 print(added)
 PYEOF
@@ -661,22 +692,43 @@ PYEOF
 
   if [ "$turning_on" = 1 ]; then
     if [ "$rule_added" = 0 ]; then
-      echo "WARNING: '$name' has qWDTT but no bound device yet (or no Reality/naive) — nothing to route, flag set for when it binds."
+      echo "WARNING: '$name' has no bound qWDTT device yet — flag set for when it binds."
     fi
-    echo "'$name': Google/YouTube now always direct, ignoring the Psiphon switch."
+    echo "'$name' ($proto): Google/YouTube now always direct, ignoring the Psiphon switch."
   else
-    echo "'$name': Google/YouTube back to the normal Psiphon switch."
+    echo "'$name' ($proto): Google/YouTube back to the normal Psiphon switch."
   fi
 }
 
 toggle_direct_route() {
-  read -rp "Client name: " name
+  local name
+  read -rep "Client name: " name
   [ -z "$name" ] && { echo "Empty name, aborting."; return; }
-  if ! has_reality "$name" && ! has_naive "$name" && ! has_wdtt "$name"; then
+
+  local avail=() labels=()
+  has_reality "$name" && avail+=("REALITY") && labels+=("Reality")
+  has_naive "$name" && avail+=("NAIVE") && labels+=("naive")
+  has_wdtt "$name" && avail+=("WDTT") && labels+=("qWDTT")
+  if [ ${#avail[@]} -eq 0 ]; then
     echo "'$name' has no Reality, naive, or qWDTT client."
     return
   fi
-  ( _do_toggle_direct_route "$name" ) || echo "Failed to toggle direct routing for '$name' — see output above."
+
+  echo "'$name' — toggle which protocol's Google/YouTube routing?"
+  local i state
+  for i in "${!avail[@]}"; do
+    state="psiphon"
+    has_direct_route "$name" "${avail[$i]}" && state="direct"
+    printf "  %d) %s (currently: %s)\n" "$((i + 1))" "${labels[$i]}" "$state"
+  done
+  local choice
+  read -rep "> " choice
+  if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#avail[@]}" ]; then
+    echo "Invalid choice, aborting."
+    return
+  fi
+  local proto="${avail[$((choice - 1))]}"
+  ( _do_toggle_direct_route "$name" "$proto" ) || echo "Failed to toggle direct routing for '$name' — see output above."
 }
 
 # =========================================================================
@@ -990,7 +1042,7 @@ while true; do
   echo "  9) Status of all services"
   echo "  10) Update sing-box/Caddy/qWDTT/Psiphon to latest"
   echo "  0) Exit"
-  read -rp "> " choice
+  read -rep "> " choice
   case "$choice" in
     1) list_clients ;;
     2) add_client ;;

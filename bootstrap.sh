@@ -295,11 +295,13 @@ try:
 except FileNotFoundError:
     pass
 
-# manage.sh's menu writes CLIENT_<name>_ROUTE=direct; carried forward
-# like the users themselves. qWDTT has no sing-box "user" (TPROXY
-# carries no auth identity) — matched by its device(s)' tunnel IP
-# instead, from the same passwords.json manage.sh's qWDTT code reads.
-reality_naive_names = {u["name"] for u in vless_users} | {u["username"] for u in naive_users}
+# manage.sh's menu writes CLIENT_<name>_ROUTE_{REALITY,NAIVE,WDTT}=direct
+# independently per protocol; carried forward the same way as the users
+# themselves. qWDTT has no sing-box "user" (TPROXY carries no auth
+# identity) — matched by its device(s)' tunnel IP instead, from the
+# same passwords.json manage.sh's qWDTT code reads.
+vless_names = {u["name"] for u in vless_users}
+naive_names = {u["username"] for u in naive_users}
 wdtt_ips_by_name = {}
 if os.path.exists("/etc/wdtt/passwords.json"):
     w = json.load(open("/etc/wdtt/passwords.json"))
@@ -308,10 +310,9 @@ if os.path.exists("/etc/wdtt/passwords.json"):
         if ips:
             wdtt_ips_by_name[pw["label"]] = ips
 
-direct_route_names = sorted(
-    name for name in reality_naive_names | set(wdtt_ips_by_name)
-    if env.get(f"CLIENT_{name}_ROUTE") == "direct"
-)
+direct_reality_names = sorted(n for n in vless_names if env.get(f"CLIENT_{n}_ROUTE_REALITY") == "direct")
+direct_naive_names = sorted(n for n in naive_names if env.get(f"CLIENT_{n}_ROUTE_NAIVE") == "direct")
+direct_wdtt_names = sorted(n for n in wdtt_ips_by_name if env.get(f"CLIENT_{n}_ROUTE_WDTT") == "direct")
 
 # naive-in only exists once it has users — sing-box refuses an empty
 # naive inbound ("missing users"), unlike vless-reality-in. manage.sh
@@ -392,13 +393,19 @@ config = {
         "rules": [
             {"inbound": ["vless-reality-in", "naive-in", "wdtt-tproxy-in"], "action": "sniff"},
             *[
-                {"user": [name], "rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "direct"}
-                for name in direct_route_names if name in reality_naive_names
+                {"inbound": ["vless-reality-in"], "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                 "action": "route", "outbound": "direct"}
+                for name in direct_reality_names
+            ],
+            *[
+                {"inbound": ["naive-in"], "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                 "action": "route", "outbound": "direct"}
+                for name in direct_naive_names
             ],
             *[
                 {"source_ip_cidr": wdtt_ips_by_name[name], "rule_set": ["google-geosite", "google-geoip"],
                  "action": "route", "outbound": "direct"}
-                for name in direct_route_names if name in wdtt_ips_by_name
+                for name in direct_wdtt_names
             ],
             {"rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "google-out"},
             {"ip_is_private": True, "action": "reject"},
@@ -409,8 +416,9 @@ config = {
 }
 
 json.dump(config, open(config_path, "w"), indent=2)
+direct_counts = f"{len(direct_reality_names)} Reality, {len(direct_naive_names)} naive, {len(direct_wdtt_names)} qWDTT"
 print(f"sing-box config.json written ({len(vless_users)} Reality, {len(naive_users)} naive user(s) carried forward"
-      f"{f', {len(direct_route_names)} on always-direct Google routing' if direct_route_names else ''})")
+      f"{f', always-direct Google routing: {direct_counts}' if direct_reality_names or direct_naive_names or direct_wdtt_names else ''})")
 PYEOF
 
 chown -R sing-box:sing-box /etc/sing-box /var/log/sing-box

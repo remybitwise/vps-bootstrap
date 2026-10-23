@@ -91,9 +91,9 @@ jobs:
       - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
         run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo bash manage.sh
 
-      - name: Toggle citest onto always-direct Google routing, and flip the live selector to direct
+      - name: Toggle citest's Reality onto always-direct Google routing, and flip the live selector to direct
         run: |
-          printf '5\ncitest\n0\n' | sudo bash manage.sh
+          printf '5\ncitest\n1\n0\n' | sudo bash manage.sh
           sudo /usr/local/sbin/singbox-google-route direct
 
       - name: Re-run bootstrap.sh with nothing specified (tests auto-detection)
@@ -148,7 +148,7 @@ jobs:
       - name: Remove the asymmetric test client and citest's direct-route toggle
         run: |
           printf '3\nasymtest\nY\nY\nY\n0\n' | sudo bash manage.sh
-          printf '5\ncitest\n0\n' | sudo bash manage.sh
+          printf '5\ncitest\n1\n0\n' | sudo bash manage.sh
 
       - name: Smoke-test real client connections (after the bare re-run)
         run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/smoke-test.sh
