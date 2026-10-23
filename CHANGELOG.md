@@ -10,6 +10,17 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.0.2] - 2026-10-23
+
+Removing a client's Reality/naive/qWDTT left their personal
+always-direct route rule behind, dead but still sitting in
+`config.json` — `manage.sh`'s remove flow now drops it too (and the
+matching `CLIENT_<name>_ROUTE_*` secrets line), same as it already
+did for the UUID/naive password. qWDTT's rule is keyed by device IP,
+not by client — if another remaining client shares that IP, the rule
+stays, since removing one of them doesn't mean the device's traffic
+should stop routing direct.
+
 ## [3.0.1] - 2026-10-23
 
 `bootstrap.sh` sourced the secrets file as a shell script to pull in

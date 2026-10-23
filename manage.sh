@@ -328,6 +328,17 @@ for i in d["inbounds"]:
         i["users"] = [u for u in i["users"] if u.get("username") != name]
 # drop naive-in if that just emptied it (see _do_add_reality_naive)
 d["inbounds"] = [i for i in d["inbounds"] if not (i["tag"] == "naive-in" and not i["users"])]
+# the client's own personal direct-route rule, if any (see toggle_direct_route)
+d["route"]["rules"] = [
+    r for r in d["route"]["rules"]
+    if not (
+        r.get("outbound") == "direct" and r.get("user") == [name]
+        and (
+            (do_reality == "1" and r.get("inbound") == ["vless-reality-in"])
+            or (do_naive == "1" and r.get("inbound") == ["naive-in"])
+        )
+    )
+]
 json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
 PYEOF
 
@@ -339,10 +350,10 @@ PYEOF
   systemctl restart sing-box
 
   if [ "$do_reality" = 1 ]; then
-    sed -i "/^CLIENT_${name}_UUID=/d" "$SECRETS_FILE"
+    sed -i "/^CLIENT_${name}_UUID=/d; /^CLIENT_${name}_ROUTE_REALITY=direct\$/d" "$SECRETS_FILE"
   fi
   if [ "$do_naive" = 1 ]; then
-    sed -i "/^CLIENT_${name}_NAIVE_PASS=/d" "$SECRETS_FILE"
+    sed -i "/^CLIENT_${name}_NAIVE_PASS=/d; /^CLIENT_${name}_ROUTE_NAIVE=direct\$/d" "$SECRETS_FILE"
   fi
 
   if [ "$do_naive" = 1 ]; then
@@ -446,14 +457,47 @@ _do_remove_wdtt() {
   echo "Stopping wdtt before editing passwords.json..."
   systemctl stop wdtt
   cp "$WDTT_CONFIG" "${WDTT_CONFIG}.bak-$(date +%s)"
-  python3 -c "
+  local sb_backup
+  sb_backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
+  cp "$SING_BOX_CONFIG" "$sb_backup"
+  local dropped_rule
+  dropped_rule="$(python3 -c "
 import json
-d = json.load(open('$WDTT_CONFIG'))
-d['passwords'] = {k: v for k, v in d['passwords'].items() if v.get('label') != '$name'}
-json.dump(d, open('$WDTT_CONFIG', 'w'), indent=2)
-"
+w = json.load(open('$WDTT_CONFIG'))
+ips = []
+for pw in w['passwords'].values():
+    if pw.get('label') == '$name':
+        ips = sorted(w['devices'][did]['ip'] + '/32' for did in pw.get('device_ids', []) if did in w.get('devices', {}))
+w['passwords'] = {k: v for k, v in w['passwords'].items() if v.get('label') != '$name'}
+json.dump(w, open('$WDTT_CONFIG', 'w'), indent=2)
+
+# a device shared with another remaining client (same IPs) keeps its rule
+still_shared = ips and any(
+    sorted(w['devices'][did]['ip'] + '/32' for did in pw.get('device_ids', []) if did in w.get('devices', {})) == ips
+    for pw in w['passwords'].values()
+)
+if ips and not still_shared:
+    d = json.load(open('$SING_BOX_CONFIG'))
+    d['route']['rules'] = [
+        r for r in d['route']['rules']
+        if not (r.get('outbound') == 'direct' and r.get('source_ip_cidr') == ips)
+    ]
+    json.dump(d, open('$SING_BOX_CONFIG', 'w'), indent=2, ensure_ascii=False)
+    print(1)
+else:
+    print(0)
+")"
   chown wdtt:wdtt "$WDTT_CONFIG"
   chmod 600 "$WDTT_CONFIG"
+  sed -i "/^CLIENT_${name}_ROUTE_WDTT=direct\$/d" "$SECRETS_FILE"
+  if [ "$dropped_rule" = 1 ]; then
+    if ! sing-box check -c "$SING_BOX_CONFIG"; then
+      echo "ERROR: sing-box check failed, restoring $sb_backup"
+      cp "$sb_backup" "$SING_BOX_CONFIG"
+    else
+      systemctl restart sing-box
+    fi
+  fi
   # stay stopped if that was the last password (see bootstrap.sh)
   if python3 -c "import json,sys; sys.exit(0 if json.load(open('$WDTT_CONFIG'))['passwords'] else 1)"; then
     systemctl start wdtt
