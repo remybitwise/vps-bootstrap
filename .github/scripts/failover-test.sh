@@ -46,15 +46,20 @@ after="$(systemctl show sing-box -p ActiveEnterTimestamp --value)"
 [ "$before" = "$after" ] && ok "switching the route did not restart sing-box" || bad "sing-box restarted on a route switch"
 
 echo "--- OnFailure=: killing psiphon triggers the watchdog immediately, not just on the timer ---"
-before_ts="$(systemctl show psiphon-watchdog -p ExecMainStartTimestamp --value 2>/dev/null)"
+# InvocationID, not ExecMainStartTimestamp — a watchdog run already in
+# flight from the timer can finish in the same wall-clock second the
+# crash's OnFailure= start lands in, and the timestamp (second
+# resolution) can't tell those two runs apart; InvocationID is a fresh
+# UUID per run regardless.
+before_id="$(systemctl show psiphon-watchdog -p InvocationID --value 2>/dev/null)"
 pkill -9 -f psiphon-tunnel-core || true
 triggered=0
-for _ in $(seq 1 10); do
+for _ in $(seq 1 20); do
   sleep 1
-  after_ts="$(systemctl show psiphon-watchdog -p ExecMainStartTimestamp --value 2>/dev/null)"
-  if [ -n "$after_ts" ] && [ "$after_ts" != "$before_ts" ]; then triggered=1; break; fi
+  after_id="$(systemctl show psiphon-watchdog -p InvocationID --value 2>/dev/null)"
+  if [ -n "$after_id" ] && [ "$after_id" != "$before_id" ]; then triggered=1; break; fi
 done
-if [ "$triggered" = 1 ]; then ok "psiphon-watchdog fired automatically on the crash (OnFailure=)"; else bad "psiphon-watchdog did not fire within 10s of the crash"; fi
+if [ "$triggered" = 1 ]; then ok "psiphon-watchdog fired automatically on the crash (OnFailure=)"; else bad "psiphon-watchdog did not fire within 20s of the crash"; fi
 systemctl restart psiphon
 sleep 2
 

@@ -14,7 +14,14 @@ case "$target" in
   *) echo "ERROR: argument must be 'direct' or 'psiphon'" >&2; exit 1 ;;
 esac
 
-if ! current_raw="$(curl -fsS "$API/proxies/google-out")"; then
+# Retries: a sing-box restart (manage.sh add/remove/toggle, an update)
+# just before this runs needs a moment before the Clash API is up.
+current_raw=""
+for _ in 1 2 3 4 5; do
+  current_raw="$(curl -fsS "$API/proxies/google-out" 2>/dev/null)" && break
+  sleep 1
+done
+if [ -z "$current_raw" ]; then
   echo "ERROR: could not reach sing-box's Clash API at $API — is sing-box running?" >&2
   exit 1
 fi

@@ -150,7 +150,7 @@ bash "$REPO_DIR/harden-server.sh"
 # =========================================================================
 
 log "3/12 — nginx"
-apt install -y nginx acl certbot >/dev/null
+apt install -y nginx certbot >/dev/null
 mkdir -p /var/www/certbot
 sed "s/REPLACE_WITH_YOUR_NAIVE_DOMAIN/${DOMAIN}/" "$REPO_DIR/nginx.conf" > /etc/nginx/nginx.conf
 nginx -t
@@ -226,10 +226,29 @@ python3 "$REPO_DIR/regen-caddyfile.py" "$DOMAIN" "$SING_BOX_CONFIG_PATH" /etc/ca
 chown -R caddy:caddy /etc/caddy
 chmod 600 /etc/caddy/Caddyfile
 
-setfacl -R -m u:caddy:rX /etc/letsencrypt/live /etc/letsencrypt/archive
-setfacl -R -d -m u:caddy:rX /etc/letsencrypt/live /etc/letsencrypt/archive
-sudo -u caddy test -r "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" \
-  || { echo "ERROR: caddy can't read the certificate"; exit 1; }
+# Group ownership, not ACLs — setfacl/getfacl reported the right grant
+# on one environment this runs in and it still wasn't enforced. g+s
+# keeps future certbot-renewed files in the caddy group; the
+# renewal-hooks/deploy script below reapplies the chmod since certbot
+# itself sets new key files to a strict mode either way.
+chgrp -R caddy /etc/letsencrypt/live /etc/letsencrypt/archive
+chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
+find /etc/letsencrypt/live /etc/letsencrypt/archive -type d -exec chmod g+s {} +
+
+mkdir -p /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/caddy-cert-access.sh <<'HOOK'
+#!/bin/sh
+chgrp -R caddy /etc/letsencrypt/live /etc/letsencrypt/archive
+chmod -R g+rX /etc/letsencrypt/live /etc/letsencrypt/archive
+systemctl restart caddy-naive
+HOOK
+chmod +x /etc/letsencrypt/renewal-hooks/deploy/caddy-cert-access.sh
+
+sudo -u caddy test -r "/etc/letsencrypt/live/${DOMAIN}/privkey.pem" || {
+  echo "ERROR: caddy can't read the certificate — diagnostics:"
+  stat -c '%A %U:%G %a %n' /etc/letsencrypt/live "/etc/letsencrypt/live/${DOMAIN}" "/etc/letsencrypt/live/${DOMAIN}/privkey.pem"
+  exit 1
+}
 
 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 
@@ -343,7 +362,9 @@ config = {
     ],
     "experimental": {
         "clash_api": {"external_controller": "127.0.0.1:9090"},
-        "cache_file": {"enabled": True},
+        # ProtectSystem=strict below only allows writes under
+        # /var/log/sing-box — the default cache.db path (cwd) isn't writable.
+        "cache_file": {"enabled": True, "path": "/var/log/sing-box/cache.db"},
     },
     "route": {
         "rule_set": [

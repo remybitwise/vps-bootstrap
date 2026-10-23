@@ -63,7 +63,7 @@ jobs:
       - uses: ./.github/actions/deploy
 
       - name: Smoke-test real client connections
-        run: sudo -E bash .github/scripts/smoke-test.sh
+        run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/smoke-test.sh
 
       - name: Dump service logs on failure
         if: failure()
@@ -89,17 +89,18 @@ jobs:
       - uses: ./.github/actions/deploy
 
       - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
-        run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo -E bash manage.sh
+        run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo bash manage.sh
 
       - name: Toggle citest onto always-direct Google routing, and flip the live selector to direct
         run: |
-          printf '5\ncitest\n0\n' | sudo -E bash manage.sh
+          printf '5\ncitest\n0\n' | sudo bash manage.sh
           sudo /usr/local/sbin/singbox-google-route direct
 
       - name: Re-run bootstrap.sh with nothing specified (tests auto-detection)
         run: |
           secrets_before="$(sudo sha256sum /root/.vps-bootstrap-secrets.env)"
-          sudo -E env -u DOMAIN -u SSH_PORT -u PSIPHON_EGRESS_REGION -u EMAIL bash bootstrap.sh
+          # DOMAIN etc. deliberately not passed — testing auto-detection.
+          sudo env "SKIP_CERTBOT=$SKIP_CERTBOT" bash bootstrap.sh
           secrets_after="$(sudo sha256sum /root/.vps-bootstrap-secrets.env)"
           if [ "$secrets_before" != "$secrets_after" ]; then
             echo "ERROR: server-wide Reality keys changed on a re-run that passed nothing"
@@ -146,11 +147,11 @@ jobs:
 
       - name: Remove the asymmetric test client and citest's direct-route toggle
         run: |
-          printf '3\nasymtest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
-          printf '5\ncitest\n0\n' | sudo -E bash manage.sh
+          printf '3\nasymtest\nY\nY\nY\n0\n' | sudo bash manage.sh
+          printf '5\ncitest\n0\n' | sudo bash manage.sh
 
       - name: Smoke-test real client connections (after the bare re-run)
-        run: sudo -E bash .github/scripts/smoke-test.sh
+        run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/smoke-test.sh
 
       - name: Dump service logs on failure
         if: failure()
@@ -176,7 +177,7 @@ jobs:
       - uses: ./.github/actions/deploy
 
       - name: Functional-test manage.sh end to end
-        run: sudo -E bash .github/scripts/manage-functional-test.sh
+        run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/manage-functional-test.sh
 
       - name: Dump service logs on failure
         if: failure()
@@ -202,7 +203,7 @@ jobs:
       - uses: ./.github/actions/deploy
 
       - name: Test Google direct-fallback failover
-        run: sudo -E bash .github/scripts/failover-test.sh
+        run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/failover-test.sh
 
       - name: Dump service logs on failure
         if: failure()
@@ -250,13 +251,16 @@ jobs:
         # step's own (unprivileged) shell isn't visible once sudo execs
         # into a root process, so `sudo bash <(curl ...)` fails with
         # "No such file or directory" even though the curl itself works.
-        run: sudo -E bash -c 'bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/$VPS_BOOTSTRAP_REF/install.sh")'
+        run: |
+          sudo env "DOMAIN=$DOMAIN" "EMAIL=$EMAIL" "PSIPHON_EGRESS_REGION=$PSIPHON_EGRESS_REGION" \
+            "SKIP_CERTBOT=$SKIP_CERTBOT" "VPS_BOOTSTRAP_REF=$VPS_BOOTSTRAP_REF" \
+            bash -c 'bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/$VPS_BOOTSTRAP_REF/install.sh")'
 
       - name: Add the test client via manage.sh
-        run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo -E bash manage.sh
+        run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh
 
       - name: Smoke-test real client connections
-        run: sudo -E bash .github/scripts/smoke-test.sh
+        run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/smoke-test.sh
 
       - name: Dump service logs on failure
         if: failure()

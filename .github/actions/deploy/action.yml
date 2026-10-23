@@ -23,8 +23,12 @@ runs:
 
     - name: Run bootstrap.sh (stands up infrastructure, no clients yet)
       shell: bash
-      run: sudo -E bash bootstrap.sh
+      # sudo -E is silently ignored on this runner image now.
+      run: |
+        sudo env "DOMAIN=$DOMAIN" "EMAIL=$EMAIL" "SSH_PORT=$SSH_PORT" \
+          "PSIPHON_EGRESS_REGION=$PSIPHON_EGRESS_REGION" "SKIP_CERTBOT=$SKIP_CERTBOT" \
+          bash bootstrap.sh
 
     - name: Add the test client via manage.sh (bootstrap.sh never creates one)
       shell: bash
-      run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo -E bash manage.sh
+      run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh
