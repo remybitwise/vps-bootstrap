@@ -269,7 +269,7 @@ id sing-box >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sb
 mkdir -p /etc/sing-box /var/log/sing-box
 
 python3 - "$DOMAIN" "$SECRETS_FILE" "$WDTT_TPROXY_PORT" "$SING_BOX_CONFIG_PATH" <<'PYEOF'
-import json, sys
+import json, os, sys
 
 domain, secrets_file, tproxy_port, config_path = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 
@@ -296,10 +296,20 @@ except FileNotFoundError:
     pass
 
 # manage.sh's menu writes CLIENT_<name>_ROUTE=direct; carried forward
-# like the users themselves.
-client_names = {u["name"] for u in vless_users} | {u["username"] for u in naive_users}
+# like the users themselves. qWDTT has no sing-box "user" (TPROXY
+# carries no auth identity) — matched by its device(s)' tunnel IP
+# instead, from the same passwords.json manage.sh's qWDTT code reads.
+reality_naive_names = {u["name"] for u in vless_users} | {u["username"] for u in naive_users}
+wdtt_ips_by_name = {}
+if os.path.exists("/etc/wdtt/passwords.json"):
+    w = json.load(open("/etc/wdtt/passwords.json"))
+    for pw in w.get("passwords", {}).values():
+        ips = sorted(f"{w['devices'][did]['ip']}/32" for did in pw.get("device_ids", []) if did in w.get("devices", {}))
+        if ips:
+            wdtt_ips_by_name[pw["label"]] = ips
+
 direct_route_names = sorted(
-    name for name in client_names
+    name for name in reality_naive_names | set(wdtt_ips_by_name)
     if env.get(f"CLIENT_{name}_ROUTE") == "direct"
 )
 
@@ -382,11 +392,13 @@ config = {
         "rules": [
             {"inbound": ["vless-reality-in", "naive-in", "wdtt-tproxy-in"], "action": "sniff"},
             *[
-                {
-                    "user": [name], "rule_set": ["google-geosite", "google-geoip"],
-                    "action": "route", "outbound": "direct",
-                }
-                for name in direct_route_names
+                {"user": [name], "rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "direct"}
+                for name in direct_route_names if name in reality_naive_names
+            ],
+            *[
+                {"source_ip_cidr": wdtt_ips_by_name[name], "rule_set": ["google-geosite", "google-geoip"],
+                 "action": "route", "outbound": "direct"}
+                for name in direct_route_names if name in wdtt_ips_by_name
             ],
             {"rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "google-out"},
             {"ip_is_private": True, "action": "reject"},

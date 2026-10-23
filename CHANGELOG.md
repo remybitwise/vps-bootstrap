@@ -24,7 +24,8 @@ affected. The choice survives a later restart on its own
 New `manage.sh` menu item: toggle a given client onto always-direct
 Google/YouTube routing, bypassing Psiphon (and the switch above)
 entirely for just that client — for when Psiphon's extra hop isn't
-worth it for a specific use.
+worth it for a specific use. Works for qWDTT clients too, matched by
+their device's tunnel IP since TPROXY traffic has no sing-box "user".
 
 ## [2.3.1] - 2026-10-14
 

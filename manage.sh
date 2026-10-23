@@ -89,11 +89,15 @@ for name in sorted(reality | naive):
   if [ -f "$WDTT_CONFIG" ]; then
     python3 -c "
 import json
-d = json.load(open('$WDTT_CONFIG'))
-for v in d['passwords'].values():
+w = json.load(open('$WDTT_CONFIG'))
+sb = json.load(open('$SING_BOX_CONFIG'))
+direct_ips = {tuple(sorted(r['source_ip_cidr'])) for r in sb['route']['rules'] if r.get('outbound') == 'direct' and r.get('source_ip_cidr')}
+for v in w['passwords'].values():
     vk = 'yes' if v.get('vk_hash') else 'NO'
     dev = 'bound' if v.get('device_id') else 'not bound'
-    print(f\"  {v['label']}: vk_hash={vk}, device={dev}\")
+    ips = tuple(sorted(f\"{w['devices'][did]['ip']}/32\" for did in v.get('device_ids', []) if did in w.get('devices', {})))
+    tag = ', google-direct' if ips and ips in direct_ips else ''
+    print(f\"  {v['label']}: vk_hash={vk}, device={dev}{tag}\")
 "
   else
     echo "  (qWDTT is not configured on this server)"
@@ -606,24 +610,47 @@ _do_toggle_direct_route() {
 
   backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
   cp "$SING_BOX_CONFIG" "$backup"
-  python3 - "$name" "$turning_on" "$SING_BOX_CONFIG" <<'PYEOF'
-import json, sys
-name, turning_on, config_path = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
+  rule_added="$(python3 - "$name" "$turning_on" "$SING_BOX_CONFIG" "$WDTT_CONFIG" <<'PYEOF'
+import json, os, sys
+name, turning_on, config_path, wdtt_config = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
+
+# qWDTT has no sing-box "user" (TPROXY traffic carries no auth identity)
+# — matched by its device(s)' assigned tunnel IP instead, from the same
+# file manage.sh's qWDTT functions already read.
+wdtt_ips = []
+if os.path.exists(wdtt_config):
+    w = json.load(open(wdtt_config))
+    device_ids = [did for pw in w.get("passwords", {}).values() if pw.get("label") == name
+                  for did in pw.get("device_ids", [])]
+    wdtt_ips = sorted(f"{w['devices'][did]['ip']}/32" for did in device_ids if did in w.get("devices", {}))
+
 d = json.load(open(config_path))
+rules = d["route"]["rules"]
+has_user = any(
+    i["tag"] in ("vless-reality-in", "naive-in")
+    and any(u.get("name") == name or u.get("username") == name for u in i["users"])
+    for i in d["inbounds"]
+)
+rules[:] = [
+    r for r in rules
+    if not (r.get("outbound") == "direct" and (r.get("user") == [name] or r.get("source_ip_cidr") == wdtt_ips))
+]
+added = 0
 if turning_on:
-    rules = d["route"]["rules"]
     idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
-    rules.insert(idx, {
-        "user": [name], "rule_set": ["google-geosite", "google-geoip"],
-        "action": "route", "outbound": "direct",
-    })
-else:
-    d["route"]["rules"] = [
-        r for r in d["route"]["rules"]
-        if not (r.get("outbound") == "direct" and r.get("user") == [name])
-    ]
+    new_rules = []
+    if has_user:
+        new_rules.append({"user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                           "action": "route", "outbound": "direct"})
+    if wdtt_ips:
+        new_rules.append({"source_ip_cidr": wdtt_ips, "rule_set": ["google-geosite", "google-geoip"],
+                           "action": "route", "outbound": "direct"})
+    rules[idx:idx] = new_rules
+    added = len(new_rules)
 json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
+print(added)
 PYEOF
+)"
 
   if ! sing-box check -c "$SING_BOX_CONFIG"; then
     echo "ERROR: sing-box check failed, restoring $backup"
@@ -633,6 +660,9 @@ PYEOF
   systemctl restart sing-box
 
   if [ "$turning_on" = 1 ]; then
+    if [ "$rule_added" = 0 ]; then
+      echo "WARNING: '$name' has qWDTT but no bound device yet (or no Reality/naive) — nothing to route, flag set for when it binds."
+    fi
     echo "'$name': Google/YouTube now always direct, ignoring the Psiphon switch."
   else
     echo "'$name': Google/YouTube back to the normal Psiphon switch."
@@ -642,8 +672,8 @@ PYEOF
 toggle_direct_route() {
   read -rp "Client name: " name
   [ -z "$name" ] && { echo "Empty name, aborting."; return; }
-  if ! has_reality "$name" && ! has_naive "$name"; then
-    echo "'$name' has no Reality or naive client."
+  if ! has_reality "$name" && ! has_naive "$name" && ! has_wdtt "$name"; then
+    echo "'$name' has no Reality, naive, or qWDTT client."
     return
   fi
   ( _do_toggle_direct_route "$name" ) || echo "Failed to toggle direct routing for '$name' — see output above."
