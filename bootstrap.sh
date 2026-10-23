@@ -109,8 +109,6 @@ fi
 
 if [ -f "$SECRETS_FILE" ]; then
   log "Secrets already generated ($SECRETS_FILE) — reusing"
-  # shellcheck disable=SC1090
-  . "$SECRETS_FILE"
 else
   log "First run — generating Reality keys"
   REALITY_KEYS="$(sing-box generate reality-keypair)"
@@ -124,8 +122,6 @@ else
     echo "SHORT_ID=$SHORT_ID"
   } > "$SECRETS_FILE"
   chmod 600 "$SECRETS_FILE"
-  # shellcheck disable=SC1090
-  . "$SECRETS_FILE"
 fi
 
 # =========================================================================

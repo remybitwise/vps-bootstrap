@@ -10,6 +10,15 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.0.1] - 2026-10-23
+
+`bootstrap.sh` sourced the secrets file as a shell script to pull in
+`REALITY_PRIVATE_KEY`/`REALITY_PUBLIC_KEY`/`SHORT_ID` — a client name
+with a `-` (not valid in a bash identifier) made that line fail as
+"command not found" and aborted the whole run. Those three are read
+back through the same python parsing every `CLIENT_*` line already
+goes through; the sourcing wasn't actually needed for anything.
+
 ## [3.0.0] - 2026-10-23
 
 **BREAKING:** the always-direct Google/YouTube toggle (2.4.0) now
