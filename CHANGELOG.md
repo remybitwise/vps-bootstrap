@@ -10,6 +10,22 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [2.4.0] - 2026-10-23
+
+Google/YouTube routing now goes through a sing-box `selector` outbound
+(`google-out`), flipped live over sing-box's own Clash API instead of
+rewriting `config.json` and restarting — `singbox-google-route.sh`
+(used by `manage.sh` and `psiphon-watchdog.sh`) no longer interrupts
+every client on a switch, only the Google-bound connections actually
+affected. The choice survives a later restart on its own
+(`cache_file`), so an unrelated `manage.sh` client add/remove or a
+`bootstrap.sh` re-run can't silently revert it back to Psiphon anymore.
+
+New `manage.sh` menu item: toggle a given client onto always-direct
+Google/YouTube routing, bypassing Psiphon (and the switch above)
+entirely for just that client — for when Psiphon's extra hop isn't
+worth it for a specific use.
+
 ## [2.3.1] - 2026-10-14
 
 `show_client_config` (menu item 4): asks what to show (everything /

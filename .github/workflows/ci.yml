@@ -91,6 +91,11 @@ jobs:
       - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
         run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo -E bash manage.sh
 
+      - name: Toggle citest onto always-direct Google routing, and flip the live selector to direct
+        run: |
+          printf '5\ncitest\n0\n' | sudo -E bash manage.sh
+          sudo /usr/local/sbin/singbox-google-route direct
+
       - name: Re-run bootstrap.sh with nothing specified (tests auto-detection)
         run: |
           secrets_before="$(sudo sha256sum /root/.vps-bootstrap-secrets.env)"
@@ -121,8 +126,28 @@ jobs:
           sys.exit(0 if ok else 1)
           "
 
-      - name: Remove the asymmetric test client
-        run: printf '3\nasymtest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
+      - name: Confirm citest's always-direct Google routing and the live selector choice both survived the bare re-run
+        run: |
+          sudo python3 -c "
+          import json, sys
+          d = json.load(open('/etc/sing-box/config.json'))
+          ok = any(r.get('user') == ['citest'] and r.get('outbound') == 'direct' for r in d['route']['rules'])
+          print('OK: citest still has its personal direct-route rule after the re-run' if ok else 'ERROR: citest lost its personal direct-route rule across the re-run')
+          sys.exit(0 if ok else 1)
+          "
+          route="$(curl -fsS http://127.0.0.1:9090/proxies/google-out | python3 -c "import json, sys; print(json.load(sys.stdin)['now'])")"
+          if [ "$route" = "direct" ]; then
+            echo "OK: google-out selector still reads 'direct' after the re-run restarted sing-box (cache_file persisted it)"
+          else
+            echo "ERROR: google-out reverted to '$route' across the re-run — cache_file did not persist the live choice"
+            exit 1
+          fi
+          sudo /usr/local/sbin/singbox-google-route psiphon
+
+      - name: Remove the asymmetric test client and citest's direct-route toggle
+        run: |
+          printf '3\nasymtest\nY\nY\nY\n0\n' | sudo -E bash manage.sh
+          printf '5\ncitest\n0\n' | sudo -E bash manage.sh
 
       - name: Smoke-test real client connections (after the bare re-run)
         run: sudo -E bash .github/scripts/smoke-test.sh

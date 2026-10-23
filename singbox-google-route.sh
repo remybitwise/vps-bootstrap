@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# singbox-google-route.sh direct|psiphon — flips where sing-box sends
-# Google-destined traffic (the route.rules entry matching the
-# google-geosite/google-geoip rule_sets) between the Psiphon outbound and
-# this VPS's own IP. Idempotent and quiet: restarts sing-box only if the
-# value actually changes, since restarting it interrupts every client
-# (Reality/naive/qWDTT), not just the Google path. Called by
-# psiphon-watchdog.sh; safe to run by hand too.
+# singbox-google-route.sh direct|psiphon — flips the google-out selector
+# between the Psiphon outbound and this VPS's own IP, via sing-box's
+# Clash API (127.0.0.1:9090). Called by psiphon-watchdog.sh; safe to run
+# by hand too.
 set -euo pipefail
 
-CONFIG=/etc/sing-box/config.json
+API=http://127.0.0.1:9090
 target="${1:?usage: singbox-google-route.sh direct|psiphon}"
 
 case "$target" in
@@ -17,25 +14,24 @@ case "$target" in
   *) echo "ERROR: argument must be 'direct' or 'psiphon'" >&2; exit 1 ;;
 esac
 
-changed="$(python3 -c "
-import json
-p = '$CONFIG'
-d = json.load(open(p))
-changed = False
-for r in d['route']['rules']:
-    if r.get('rule_set') == ['google-geosite', 'google-geoip']:
-        if r.get('outbound') != '$new_outbound':
-            r['outbound'] = '$new_outbound'
-            changed = True
-if changed:
-    json.dump(d, open(p, 'w'), indent=2)
-print('1' if changed else '0')
-")"
-
-if [ "$changed" = "1" ]; then
-  sing-box check -c "$CONFIG"
-  systemctl restart sing-box
-  echo "Google route switched to: $target"
-else
-  echo "Google route already: $target (no change)"
+if ! current_raw="$(curl -fsS "$API/proxies/google-out")"; then
+  echo "ERROR: could not reach sing-box's Clash API at $API — is sing-box running?" >&2
+  exit 1
 fi
+current="$(printf '%s' "$current_raw" | python3 -c "import json, sys; print(json.load(sys.stdin)['now'])")"
+
+if [ "$current" = "$new_outbound" ]; then
+  echo "Google route already: $target (no change)"
+  exit 0
+fi
+
+if ! code="$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$API/proxies/google-out" \
+        -H 'Content-Type: application/json' -d "{\"name\":\"$new_outbound\"}")"; then
+  echo "ERROR: could not reach sing-box's Clash API at $API — is sing-box running?" >&2
+  exit 1
+fi
+if [ "$code" != "204" ]; then
+  echo "ERROR: Clash API PUT failed (HTTP $code)" >&2
+  exit 1
+fi
+echo "Google route switched to: $target"

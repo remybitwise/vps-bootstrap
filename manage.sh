@@ -75,10 +75,12 @@ import json
 d = json.load(open('$SING_BOX_CONFIG'))
 reality = {u['name'] for i in d['inbounds'] if i['tag']=='vless-reality-in' for u in i['users']}
 naive = {u['username'] for i in d['inbounds'] if i['tag']=='naive-in' for u in i['users']}
+direct = {r['user'][0] for r in d['route']['rules'] if r.get('outbound') == 'direct' and r.get('user')}
 for name in sorted(reality | naive):
     tags = []
     if name in reality: tags.append('reality')
     if name in naive: tags.append('naive')
+    if name in direct: tags.append('google-direct')
     print(f'  {name}: {\",\".join(tags)}')
 " 2>/dev/null || echo "  (failed to read $SING_BOX_CONFIG)"
 
@@ -584,6 +586,69 @@ PYEOF
   fi
 }
 
+has_direct_route() {
+  grep -q "^CLIENT_${1}_ROUTE=direct$" "$SECRETS_FILE" 2>/dev/null
+}
+
+_do_toggle_direct_route() {
+  set -euo pipefail
+  local name="$1" backup turning_on=1
+  has_direct_route "$name" && turning_on=0
+
+  # Secrets first, same order as _do_add_reality_naive/_do_remove_reality_naive —
+  # if systemctl restart below fails, secrets and config.json still agree
+  # with each other instead of drifting apart.
+  if [ "$turning_on" = 1 ]; then
+    echo "CLIENT_${name}_ROUTE=direct" >> "$SECRETS_FILE"
+  else
+    sed -i "/^CLIENT_${name}_ROUTE=direct\$/d" "$SECRETS_FILE"
+  fi
+
+  backup="${SING_BOX_CONFIG}.bak-$(date +%s)"
+  cp "$SING_BOX_CONFIG" "$backup"
+  python3 - "$name" "$turning_on" "$SING_BOX_CONFIG" <<'PYEOF'
+import json, sys
+name, turning_on, config_path = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
+d = json.load(open(config_path))
+if turning_on:
+    rules = d["route"]["rules"]
+    idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
+    rules.insert(idx, {
+        "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+        "action": "route", "outbound": "direct",
+    })
+else:
+    d["route"]["rules"] = [
+        r for r in d["route"]["rules"]
+        if not (r.get("outbound") == "direct" and r.get("user") == [name])
+    ]
+json.dump(d, open(config_path, "w"), indent=2, ensure_ascii=False)
+PYEOF
+
+  if ! sing-box check -c "$SING_BOX_CONFIG"; then
+    echo "ERROR: sing-box check failed, restoring $backup"
+    cp "$backup" "$SING_BOX_CONFIG"
+    return 1
+  fi
+  systemctl restart sing-box
+
+  if [ "$turning_on" = 1 ]; then
+    echo "'$name': Google/YouTube now always direct, ignoring the Psiphon switch."
+  else
+    echo "'$name': Google/YouTube back to the normal Psiphon switch."
+  fi
+}
+
+toggle_direct_route() {
+  read -rp "Client name: " name
+  [ -z "$name" ] && { echo "Empty name, aborting."; return; }
+  if ! has_reality "$name" && ! has_naive "$name"; then
+    echo "'$name' has no Reality or naive client."
+    return
+  fi
+  ( _do_toggle_direct_route "$name" ) || echo "Failed to toggle direct routing for '$name' — see output above."
+}
+
 # =========================================================================
 # Psiphon
 # =========================================================================
@@ -597,17 +662,10 @@ egress_region() {
 }
 
 google_route() {
-  # Reads the live sing-box config rather than watchdog.state's
-  # via_direct flag — shows what's actually routing traffic right now,
-  # regardless of how it got that way.
-  python3 -c "
-import json
-d = json.load(open('$SING_BOX_CONFIG'))
-for r in d['route']['rules']:
-    if r.get('rule_set') == ['google-geosite', 'google-geoip']:
-        print(r.get('outbound', '?'))
-        break
-" 2>/dev/null || echo "?"
+  # config.json just says "google-out" now — ask the Clash API what
+  # it's actually pointing at.
+  curl -fsS http://127.0.0.1:9090/proxies/google-out 2>/dev/null \
+    | python3 -c "import json, sys; print(json.load(sys.stdin)['now'])" 2>/dev/null || echo "?"
 }
 
 psiphon_wait_up() {
@@ -893,13 +951,14 @@ while true; do
   echo "  2) Add client"
   echo "  3) Remove client"
   echo "  4) Show client config (vless link + JSON)"
+  echo "  5) Toggle Google/YouTube direct routing for a client"
   echo "${C_CYAN}Psiphon:${C_RESET}"
-  echo "  5) Status (region / Google verdict / speed)"
-  echo "  6) Change exit IP (same region)"
-  echo "  7) Change region (next in the pool)"
+  echo "  6) Status (region / Google verdict / speed)"
+  echo "  7) Change exit IP (same region)"
+  echo "  8) Change region (next in the pool)"
   echo "${C_CYAN}Services:${C_RESET}"
-  echo "  8) Status of all services"
-  echo "  9) Update sing-box/Caddy/qWDTT/Psiphon to latest"
+  echo "  9) Status of all services"
+  echo "  10) Update sing-box/Caddy/qWDTT/Psiphon to latest"
   echo "  0) Exit"
   read -rp "> " choice
   case "$choice" in
@@ -907,11 +966,12 @@ while true; do
     2) add_client ;;
     3) remove_client ;;
     4) show_client_config ;;
-    5) psiphon_status ;;
-    6) psiphon_restart_same_region ;;
-    7) psiphon_rotate_region ;;
-    8) services_status ;;
-    9) update_all_binaries ;;
+    5) toggle_direct_route ;;
+    6) psiphon_status ;;
+    7) psiphon_restart_same_region ;;
+    8) psiphon_rotate_region ;;
+    9) services_status ;;
+    10) update_all_binaries ;;
     0) exit 0 ;;
     *) echo "Unrecognized choice, pick an item from the list." ;;
   esac

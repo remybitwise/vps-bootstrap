@@ -16,20 +16,13 @@ DOMAIN="${DOMAIN:?set DOMAIN}"
 CLIENT_NAME="${CLIENT_NAME:?set CLIENT_NAME}"
 FAIL=0
 PSIPHON_DEFAULT=/etc/default/psiphon-watchdog
-SING_BOX_CONFIG=/etc/sing-box/config.json
 
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
 google_route() {
-  python3 -c "
-import json
-d = json.load(open('$SING_BOX_CONFIG'))
-for r in d['route']['rules']:
-    if r.get('rule_set') == ['google-geosite', 'google-geoip']:
-        print(r.get('outbound', '?'))
-        break
-"
+  curl -fsS http://127.0.0.1:9090/proxies/google-out 2>/dev/null \
+    | python3 -c "import json, sys; print(json.load(sys.stdin)['now'])" 2>/dev/null || echo "?"
 }
 
 systemctl stop psiphon-watchdog.timer
@@ -43,11 +36,14 @@ after="$(systemctl show sing-box -p ActiveEnterTimestamp --value)"
 [ "$(google_route)" = "psiphon-out" ] && ok "route is psiphon-out" || bad "route not psiphon-out"
 [ "$before" = "$after" ] && ok "repeating the same target did not restart sing-box" || bad "sing-box restarted on a no-op route call"
 
-echo "--- singbox-google-route.sh: actually flips and restarts when the value changes ---"
+echo "--- singbox-google-route.sh: flips the live selector, no restart either way ---"
+before="$(systemctl show sing-box -p ActiveEnterTimestamp --value)"
 /usr/local/sbin/singbox-google-route direct >/dev/null
 [ "$(google_route)" = "direct" ] && ok "route switched to direct" || bad "route did not switch to direct"
 /usr/local/sbin/singbox-google-route psiphon >/dev/null
 [ "$(google_route)" = "psiphon-out" ] && ok "route switched back to psiphon-out" || bad "route did not switch back"
+after="$(systemctl show sing-box -p ActiveEnterTimestamp --value)"
+[ "$before" = "$after" ] && ok "switching the route did not restart sing-box" || bad "sing-box restarted on a route switch"
 
 echo "--- OnFailure=: killing psiphon triggers the watchdog immediately, not just on the timer ---"
 before_ts="$(systemctl show psiphon-watchdog -p ExecMainStartTimestamp --value 2>/dev/null)"

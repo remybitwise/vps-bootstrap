@@ -48,6 +48,21 @@ systemctl is-active --quiet wdtt && ok "wdtt still active after add" || bad "wdt
 echo "--- real connection check for the newly added client ---"
 test_client "$DOMAIN" "$NEW_CLIENT" || true
 
+echo "--- manage.sh: toggle Google/YouTube direct routing for '$NEW_CLIENT' ---"
+out="$(run_manage "5\n${NEW_CLIENT}\n1\n0\n" 2>&1)"
+echo "$out"
+echo "$out" | grep -q "always direct" && ok "menu: direct routing toggled on" || bad "menu: direct routing toggle-on did not report success"
+echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*google-direct" && ok "menu: list_clients shows google-direct tag" || bad "menu: list_clients missing google-direct tag"
+grep -q "^CLIENT_${NEW_CLIENT}_ROUTE=direct$" "$SECRETS_FILE" && ok "secrets: direct-route flag written" || bad "secrets: direct-route flag missing"
+
+out="$(run_manage "5\n${NEW_CLIENT}\n1\n0\n" 2>&1)"
+echo "$out"
+echo "$out" | grep -q "normal Psiphon switch" && ok "menu: direct routing toggled off" || bad "menu: direct routing toggle-off did not report success"
+echo "$out" | grep -qE "^\s*${NEW_CLIENT}:.*google-direct" && bad "menu: list_clients still shows google-direct tag after toggle-off" || ok "menu: list_clients no longer shows google-direct tag"
+grep -q "^CLIENT_${NEW_CLIENT}_ROUTE=direct$" "$SECRETS_FILE" && bad "secrets: direct-route flag still present after toggle-off" || ok "secrets: direct-route flag gone"
+
+systemctl is-active --quiet sing-box && ok "sing-box still active after routing toggle" || bad "sing-box not active after routing toggle"
+
 echo "--- manage.sh: remove client '$NEW_CLIENT' (Reality + naive + qWDTT) ---"
 out="$(run_manage "3\n${NEW_CLIENT}\nY\nY\nY\n0\n" 2>&1)"
 echo "$out"
@@ -70,7 +85,7 @@ sys.exit(1 if any(v.get('label') == '$NEW_CLIENT' for v in d['passwords'].values
 " && ok "qWDTT: '$NEW_CLIENT' gone from passwords.json" || bad "qWDTT: '$NEW_CLIENT' still listed"
 
 echo "--- manage.sh: Psiphon status / show client config / services status via menu ---"
-out="$(run_manage "5\n4\n${CLIENT_NAME}\n8\n0\n" 2>&1)"
+out="$(run_manage "6\n4\n${CLIENT_NAME}\n9\n0\n" 2>&1)"
 echo "$out"
 
 echo "$out" | grep -q "=== Psiphon ===" && ok "menu: Psiphon status ran" || bad "menu: Psiphon status did not print"
@@ -78,12 +93,12 @@ echo "$out" | grep -q "vless://" && ok "menu: show client config printed a vless
 echo "$out" | grep -q '"type": "vless"' && ok "menu: show client config printed Reality JSON" || bad "menu: show client config did not print Reality JSON"
 echo "$out" | grep -q "wdtt://" && ok "menu: show client config printed a wdtt link" || bad "menu: show client config did not print a wdtt link"
 echo "$out" | grep -q "qwdtt://config" && ok "menu: show client config printed a qwdtt link" || bad "menu: show client config did not print a qwdtt link"
-# $out is scoped to just this one menu run (5, 4, CLIENT_NAME, 8, 0) —
+# $out is scoped to just this one menu run (6, 4, CLIENT_NAME, 9, 0) —
 # services_status is the only thing in it that ever prints the word FAIL.
 if echo "$out" | grep -q "FAIL"; then bad "menu: services_status reported a FAIL"; else ok "menu: services_status reported no FAIL"; fi
 
-echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 9) ---"
-out="$(run_manage "9\nY\n0\n" 2>&1)"
+echo "--- manage.sh: update sing-box/Caddy/qWDTT/Psiphon (option 10) ---"
+out="$(run_manage "10\nY\n0\n" 2>&1)"
 echo "$out"
 
 echo "$out" | grep -q "sing-box updated:" && ok "menu: sing-box update reported success" || bad "menu: sing-box update did not report success"

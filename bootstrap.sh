@@ -276,6 +276,14 @@ try:
 except FileNotFoundError:
     pass
 
+# manage.sh's menu writes CLIENT_<name>_ROUTE=direct; carried forward
+# like the users themselves.
+client_names = {u["name"] for u in vless_users} | {u["username"] for u in naive_users}
+direct_route_names = sorted(
+    name for name in client_names
+    if env.get(f"CLIENT_{name}_ROUTE") == "direct"
+)
+
 # naive-in only exists once it has users — sing-box refuses an empty
 # naive inbound ("missing users"), unlike vless-reality-in. manage.sh
 # creates/drops it as the first/last naive client comes or goes.
@@ -325,7 +333,18 @@ config = {
     "outbounds": [
         {"type": "direct", "tag": "direct"},
         {"type": "socks", "tag": "psiphon-out", "server": "127.0.0.1", "server_port": 11080},
+        # Selector so singbox-google-route can flip it live over the
+        # Clash API instead of editing outbound= and restarting.
+        {
+            "type": "selector", "tag": "google-out",
+            "outbounds": ["psiphon-out", "direct"], "default": "psiphon-out",
+            "interrupt_exist_connections": True,
+        },
     ],
+    "experimental": {
+        "clash_api": {"external_controller": "127.0.0.1:9090"},
+        "cache_file": {"enabled": True},
+    },
     "route": {
         "rule_set": [
             {
@@ -341,7 +360,14 @@ config = {
         ],
         "rules": [
             {"inbound": ["vless-reality-in", "naive-in", "wdtt-tproxy-in"], "action": "sniff"},
-            {"rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "psiphon-out"},
+            *[
+                {
+                    "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                    "action": "route", "outbound": "direct",
+                }
+                for name in direct_route_names
+            ],
+            {"rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "google-out"},
             {"ip_is_private": True, "action": "reject"},
             {"protocol": "bittorrent", "action": "reject"},
         ],
@@ -350,7 +376,8 @@ config = {
 }
 
 json.dump(config, open(config_path, "w"), indent=2)
-print(f"sing-box config.json written ({len(vless_users)} Reality, {len(naive_users)} naive user(s) carried forward)")
+print(f"sing-box config.json written ({len(vless_users)} Reality, {len(naive_users)} naive user(s) carried forward"
+      f"{f', {len(direct_route_names)} on always-direct Google routing' if direct_route_names else ''})")
 PYEOF
 
 chown -R sing-box:sing-box /etc/sing-box /var/log/sing-box
