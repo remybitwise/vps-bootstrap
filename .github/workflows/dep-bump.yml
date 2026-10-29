@@ -81,3 +81,6 @@ jobs:
           gh pr create --title "Bump pinned dependency versions" \
             --body "Weekly check found newer upstream sing-box/Caddy/qWDTT/Psiphon versions than \`VERSIONS\` pins. CI on this PR is the real gate — merge only if it comes back green." \
             --head "$branch" --base master
+
+          # pull_request-triggered CI run on a bot PR needs manual approval — kick it by hand instead.
+          gh workflow run ci.yml --ref "$branch"
