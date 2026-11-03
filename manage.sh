@@ -280,6 +280,7 @@ if has_r == "1":
             "utls": {"enabled": True, "fingerprint": "chrome"},
             "reality": {"enabled": True, "public_key": pub, "short_id": sid},
         },
+        "tcp_fast_open": True, "tcp_keep_alive": "30s",
     })
 if has_n == "1":
     outbounds.append({
@@ -610,6 +611,7 @@ if has_r == "1":
             "utls": {"enabled": True, "fingerprint": "chrome"},
             "reality": {"enabled": True, "public_key": pub, "short_id": sid},
         },
+        "tcp_fast_open": True, "tcp_keep_alive": "30s",
     })
 if has_n == "1":
     outbounds.append({

@@ -320,6 +320,7 @@ inbounds = [
         "listen": "0.0.0.0",
         "listen_port": 443,
         "tcp_fast_open": True,
+        "tcp_keep_alive": "30s",
         "users": vless_users,
         "tls": {
             "enabled": True,
@@ -340,6 +341,8 @@ if naive_users:
         "listen": "127.0.0.1",
         "listen_port": 1080,
         "network": "tcp",
+        "tcp_fast_open": True,
+        "tcp_keep_alive": "30s",
         "users": naive_users,
     })
 inbounds.append({
