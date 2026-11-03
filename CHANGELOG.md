@@ -10,6 +10,19 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.0.3] - 2026-11-03
+
+Reality and naive's client-facing config (and the server's own inbounds
+for both) now set `tcp_fast_open`/`tcp_keep_alive` consistently — Reality
+only had `tcp_fast_open` on the server side and nothing on the client
+side, naive only had both on the client side. Idle connections on either
+leg now get probed every 30s instead of relying on the kernel's 2-hour
+default, so a dead peer (gone mid-TLS-shaping, not just cleanly closed)
+gets noticed and cleaned up instead of leaving a stuck half-open
+connection behind.
+
+Also bumps the pinned sing-box version: 1.14.3 → 1.14.4.
+
 ## [3.0.2] - 2026-10-23
 
 Removing a client's Reality/naive/qWDTT left their personal
