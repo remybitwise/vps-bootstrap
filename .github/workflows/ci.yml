@@ -179,9 +179,14 @@ jobs:
           # youtube.com, unlike gstatic.com (lib.sh's generic connectivity
           # target), is actually in the google-geosite/geoip rule_set this
           # toggle keys off — gstatic wouldn't exercise the rule at all.
-          curl -x socks5h://127.0.0.1:19003 -sS -o /dev/null --max-time 15 "https://www.youtube.com/?ci=$RANDOM" || true
-          sleep 1
-          chain="$(curl -fsS http://127.0.0.1:9090/connections | python3 -c "
+          # Looping the request keeps a connection open long enough for the
+          # /connections poll below to catch it — a single request can
+          # close before the next curl even starts.
+          (for i in 1 2 3 4 5; do curl -x socks5h://127.0.0.1:19003 -sS -o /dev/null --max-time 10 "https://www.youtube.com/?ci=$i"; done) &
+          curl_pid=$!
+          chain=""
+          for i in 1 2 3 4 5 6; do
+            chain="$(curl -fsS http://127.0.0.1:9090/connections | python3 -c "
           import json, sys
           d = json.load(sys.stdin)
           for c in d['connections']:
@@ -189,6 +194,10 @@ jobs:
                   print(','.join(c['chains']))
                   break
           ")"
+            [ -n "$chain" ] && break
+            sleep 0.5
+          done
+          wait "$curl_pid" 2>/dev/null || true
           sudo kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
           sudo rm -rf "$workdir"
           if [ "$chain" = "direct" ]; then
