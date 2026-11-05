@@ -10,6 +10,20 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.0.4] - 2026-11-05
+
+The per-client always-direct Google/YouTube toggle never actually
+worked — its route rule used sing-box's `"user"` field (matches the
+local process name, for TUN-style routing) instead of `"auth_user"`
+(matches the VLESS/naive authenticated username), so it always silently
+fell through to the general switch. CI's own check had the same typo,
+so it passed against its own bug; fixed both, plus added a real
+end-to-end check via the Clash API.
+
+`psiphon-gemini-check`'s error regex expected `[1060]` but Gemini's
+actual refusal is `[1060,null,"message"]`, so it never matched and
+every refusal got misreported as inconclusive — which never rotates.
+
 ## [3.0.3] - 2026-11-03
 
 Reality and naive's client-facing config (and the server's own inbounds

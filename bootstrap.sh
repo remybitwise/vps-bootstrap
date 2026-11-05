@@ -392,12 +392,12 @@ config = {
         "rules": [
             {"inbound": ["vless-reality-in", "naive-in", "wdtt-tproxy-in"], "action": "sniff"},
             *[
-                {"inbound": ["vless-reality-in"], "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                {"inbound": ["vless-reality-in"], "auth_user": [name], "rule_set": ["google-geosite", "google-geoip"],
                  "action": "route", "outbound": "direct"}
                 for name in direct_reality_names
             ],
             *[
-                {"inbound": ["naive-in"], "user": [name], "rule_set": ["google-geosite", "google-geoip"],
+                {"inbound": ["naive-in"], "auth_user": [name], "rule_set": ["google-geosite", "google-geoip"],
                  "action": "route", "outbound": "direct"}
                 for name in direct_naive_names
             ],

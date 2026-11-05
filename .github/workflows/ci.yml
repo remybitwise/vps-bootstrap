@@ -132,7 +132,7 @@ jobs:
           sudo python3 -c "
           import json, sys
           d = json.load(open('/etc/sing-box/config.json'))
-          ok = any(r.get('user') == ['citest'] and r.get('outbound') == 'direct' for r in d['route']['rules'])
+          ok = any(r.get('auth_user') == ['citest'] and r.get('outbound') == 'direct' for r in d['route']['rules'])
           print('OK: citest still has its personal direct-route rule after the re-run' if ok else 'ERROR: citest lost its personal direct-route rule across the re-run')
           sys.exit(0 if ok else 1)
           "
@@ -144,6 +144,59 @@ jobs:
             exit 1
           fi
           sudo /usr/local/sbin/singbox-google-route psiphon
+
+      - name: Prove citest's Google traffic actually takes the direct outbound, not just that the config says so
+        run: |
+          workdir="$(mktemp -d)"
+          sudo python3 - "$workdir" <<'PYEOF'
+          import json, sys
+          workdir = sys.argv[1]
+          env = {}
+          with open("/root/.vps-bootstrap-secrets.env") as f:
+              for line in f:
+                  line = line.strip()
+                  if line and "=" in line:
+                      k, v = line.split("=", 1)
+                      env[k] = v
+          client = {
+              "inbounds": [{"type": "socks", "tag": "in", "listen": "127.0.0.1", "listen_port": 19003}],
+              "outbounds": [{
+                  "type": "vless", "tag": "out", "server": "127.0.0.1", "server_port": 443,
+                  "uuid": env["CLIENT_citest_UUID"], "flow": "xtls-rprx-vision",
+                  "tls": {
+                      "enabled": True, "server_name": "ci.invalid",
+                      "utls": {"enabled": True, "fingerprint": "chrome"},
+                      "reality": {"enabled": True, "public_key": env["REALITY_PUBLIC_KEY"], "short_id": env["SHORT_ID"]},
+                  },
+              }],
+              "route": {"final": "out"},
+          }
+          json.dump(client, open(f"{workdir}/client.json", "w"))
+          PYEOF
+          sudo sing-box run -c "$workdir/client.json" > "$workdir/client.log" 2>&1 &
+          pid=$!
+          sleep 2
+          # youtube.com, unlike gstatic.com (lib.sh's generic connectivity
+          # target), is actually in the google-geosite/geoip rule_set this
+          # toggle keys off — gstatic wouldn't exercise the rule at all.
+          curl -x socks5h://127.0.0.1:19003 -sS -o /dev/null --max-time 15 "https://www.youtube.com/?ci=$RANDOM" || true
+          sleep 1
+          chain="$(curl -fsS http://127.0.0.1:9090/connections | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          for c in d['connections']:
+              if 'youtube' in (c['metadata'].get('host') or ''):
+                  print(','.join(c['chains']))
+                  break
+          ")"
+          sudo kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+          sudo rm -rf "$workdir"
+          if [ "$chain" = "direct" ]; then
+            echo "OK: citest's youtube.com connection actually took the direct outbound (chain: $chain)"
+          else
+            echo "ERROR: citest's youtube.com connection took '$chain', not direct — the toggle's config looks right but traffic isn't following it"
+            exit 1
+          fi
 
       - name: Remove the asymmetric test client and citest's direct-route toggle
         run: |

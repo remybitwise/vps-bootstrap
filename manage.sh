@@ -75,8 +75,8 @@ import json
 d = json.load(open('$SING_BOX_CONFIG'))
 reality = {u['name'] for i in d['inbounds'] if i['tag']=='vless-reality-in' for u in i['users']}
 naive = {u['username'] for i in d['inbounds'] if i['tag']=='naive-in' for u in i['users']}
-direct_reality = {r['user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['vless-reality-in'] and r.get('user')}
-direct_naive = {r['user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['naive-in'] and r.get('user')}
+direct_reality = {r['auth_user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['vless-reality-in'] and r.get('auth_user')}
+direct_naive = {r['auth_user'][0] for r in d['route']['rules'] if r.get('outbound')=='direct' and r.get('inbound')==['naive-in'] and r.get('auth_user')}
 for name in sorted(reality | naive):
     parts = []
     if name in reality: parts.append('reality:' + ('direct' if name in direct_reality else 'psiphon'))
@@ -333,7 +333,7 @@ d["inbounds"] = [i for i in d["inbounds"] if not (i["tag"] == "naive-in" and not
 d["route"]["rules"] = [
     r for r in d["route"]["rules"]
     if not (
-        r.get("outbound") == "direct" and r.get("user") == [name]
+        r.get("outbound") == "direct" and r.get("auth_user") == [name]
         and (
             (do_reality == "1" and r.get("inbound") == ["vless-reality-in"])
             or (do_naive == "1" and r.get("inbound") == ["naive-in"])
@@ -696,12 +696,12 @@ if proto in ("REALITY", "NAIVE"):
     inbound_tag = "vless-reality-in" if proto == "REALITY" else "naive-in"
     rules[:] = [
         r for r in rules
-        if not (r.get("outbound") == "direct" and r.get("inbound") == [inbound_tag] and r.get("user") == [name])
+        if not (r.get("outbound") == "direct" and r.get("inbound") == [inbound_tag] and r.get("auth_user") == [name])
     ]
     if turning_on:
         idx = next((i for i, r in enumerate(rules) if "rule_set" in r), len(rules))
         rules.insert(idx, {
-            "inbound": [inbound_tag], "user": [name],
+            "inbound": [inbound_tag], "auth_user": [name],
             "rule_set": ["google-geosite", "google-geoip"], "action": "route", "outbound": "direct",
         })
         added = 1
