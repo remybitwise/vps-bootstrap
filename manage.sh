@@ -272,7 +272,7 @@ domain, has_r, uuid, pub, sid, has_n, username, naive_pass = sys.argv[1:9]
 outbounds = []
 if has_r == "1":
     outbounds.append({
-        "type": "vless", "tag": "proxy-reality",
+        "type": "vless", "tag": f"{username}-reality",
         "server": domain, "server_port": 443,
         "uuid": uuid, "flow": "xtls-rprx-vision",
         "tls": {
@@ -284,7 +284,7 @@ if has_r == "1":
     })
 if has_n == "1":
     outbounds.append({
-        "type": "naive", "tag": "proxy-naive",
+        "type": "naive", "tag": f"{username}-naive",
         "server": domain, "server_port": 443,
         "username": username, "password": naive_pass,
         "tls": {"enabled": True, "server_name": domain},
@@ -529,6 +529,26 @@ add_client() {
     add_reality_naive "$name" "$add_reality" "$add_naive"
   fi
   [ "$add_wdtt_flag" = 1 ] && add_wdtt "$name"
+
+  local direct_reality direct_naive direct_wdtt
+  if [ "$add_reality" = 1 ]; then
+    direct_reality=$(ask_yn "Google/YouTube always direct for Reality? [Y/n]" Y)
+    if [ "$direct_reality" = 1 ]; then
+      ( _do_toggle_direct_route "$name" REALITY ) || echo "Failed to set Reality to direct for '$name' — see output above."
+    fi
+  fi
+  if [ "$add_naive" = 1 ]; then
+    direct_naive=$(ask_yn "Google/YouTube always direct for naive? [Y/n]" Y)
+    if [ "$direct_naive" = 1 ]; then
+      ( _do_toggle_direct_route "$name" NAIVE ) || echo "Failed to set naive to direct for '$name' — see output above."
+    fi
+  fi
+  if [ "$add_wdtt_flag" = 1 ]; then
+    direct_wdtt=$(ask_yn "Google/YouTube always direct for qWDTT? [Y/n]" Y)
+    if [ "$direct_wdtt" = 1 ]; then
+      ( _do_toggle_direct_route "$name" WDTT ) || echo "Failed to set qWDTT to direct for '$name' — see output above."
+    fi
+  fi
 }
 
 remove_client() {
@@ -603,7 +623,7 @@ domain, has_r, uuid, pub, sid, has_n, username, naive_pass = sys.argv[1:9]
 outbounds = []
 if has_r == "1":
     outbounds.append({
-        "type": "vless", "tag": "proxy-reality",
+        "type": "vless", "tag": f"{username}-reality",
         "server": domain, "server_port": 443,
         "uuid": uuid, "flow": "xtls-rprx-vision",
         "tls": {
@@ -615,7 +635,7 @@ if has_r == "1":
     })
 if has_n == "1":
     outbounds.append({
-        "type": "naive", "tag": "proxy-naive",
+        "type": "naive", "tag": f"{username}-naive",
         "server": domain, "server_port": 443,
         "username": username, "password": naive_pass,
         "tls": {"enabled": True, "server_name": domain},

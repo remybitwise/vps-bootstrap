@@ -31,4 +31,4 @@ runs:
 
     - name: Add the test client via manage.sh (bootstrap.sh never creates one)
       shell: bash
-      run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh
+      run: printf '2\n%s\nY\nY\nY\nN\nN\nN\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh

@@ -19,7 +19,7 @@ WDTT_CONFIG=/etc/wdtt/passwords.json
 run_manage() { printf '%b' "$1" | bash manage.sh; }
 
 echo "--- manage.sh: add client '$NEW_CLIENT' (Reality + naive + qWDTT) ---"
-out="$(run_manage "2\n${NEW_CLIENT}\nY\nY\nY\n0\n" 2>&1)"
+out="$(run_manage "2\n${NEW_CLIENT}\nY\nY\nY\nN\nN\nN\n0\n" 2>&1)"
 echo "$out"
 
 repo_version="$(cat VERSION)"

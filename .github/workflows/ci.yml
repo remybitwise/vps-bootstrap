@@ -89,7 +89,7 @@ jobs:
       - uses: ./.github/actions/deploy
 
       - name: Add an asymmetric client (Reality only, no naive) before the bare re-run
-        run: printf '2\nasymtest\nY\nN\nN\n0\n' | sudo bash manage.sh
+        run: printf '2\nasymtest\nY\nN\nN\nN\n0\n' | sudo bash manage.sh
 
       - name: Toggle citest's Reality onto always-direct Google routing, and flip the live selector to direct
         run: |
@@ -319,7 +319,7 @@ jobs:
             bash -c 'bash <(curl -fsSL "https://raw.githubusercontent.com/remybitwise/vps-bootstrap/$VPS_BOOTSTRAP_REF/install.sh")'
 
       - name: Add the test client via manage.sh
-        run: printf '2\n%s\nY\nY\nY\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh
+        run: printf '2\n%s\nY\nY\nY\nN\nN\nN\n0\n' "${CLIENT_NAME}" | sudo bash manage.sh
 
       - name: Smoke-test real client connections
         run: sudo env "DOMAIN=$DOMAIN" "CLIENT_NAME=$CLIENT_NAME" bash .github/scripts/smoke-test.sh
