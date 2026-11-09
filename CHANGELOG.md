@@ -10,6 +10,19 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.1.0] - 2026-11-09
+
+Client-facing JSON tags are now `<name>-reality`/`<name>-naive` instead
+of the flat `proxy-reality`/`proxy-naive` — identifiable on sight when
+juggling several configs. `add_client` also asks whether Google/YouTube
+should start always-direct for each protocol being added, instead of
+always defaulting to the Psiphon switch and needing a separate trip to
+the toggle menu per protocol afterward.
+
+**Scripted callers:** `add_client` can now prompt up to 3 more times
+mid-flow (same category as 2.3.0's menu renumbering) — a fixed stdin
+sequence needs the extra answers.
+
 ## [3.0.4] - 2026-11-05
 
 The per-client always-direct Google/YouTube toggle never actually
