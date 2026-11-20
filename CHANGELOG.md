@@ -10,6 +10,13 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.1.2] - 2026-11-20
+
+New qWDTT clients no longer cap at 1 device by default (effectively
+uncapped now) — Reality/naive have no such cap, and the old default
+just meant a reinstalled app or a reset phone (new device ID) locked
+the person out until someone cleared the stale binding by hand.
+
 ## [3.1.1] - 2026-11-20
 
 Bumps pinned Caddy v2.11.7 → v2.11.9 (security fixes, mostly FastCGI)
