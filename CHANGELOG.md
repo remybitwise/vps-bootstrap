@@ -10,6 +10,11 @@ stuff. PATCH for fixes.
 `/etc/vps-bootstrap-version` on a deployed server records what's
 actually running there.
 
+## [3.1.1] - 2026-11-20
+
+Bumps pinned Caddy v2.11.7 → v2.11.9 (security fixes, mostly FastCGI)
+and the Psiphon ref.
+
 ## [3.1.0] - 2026-11-09
 
 Client-facing JSON tags are now `<name>-reality`/`<name>-naive` instead
