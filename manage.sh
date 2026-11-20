@@ -408,7 +408,7 @@ d["passwords"][password] = {
     "label": name,
     "device_id": "",
     "device_ids": [],
-    "max_devices": 1,
+    "max_devices": 999999,
     "expires_at": 0,
     "down_bytes": 0,
     "up_bytes": 0,
