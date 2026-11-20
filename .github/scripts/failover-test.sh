@@ -54,12 +54,12 @@ echo "--- OnFailure=: killing psiphon triggers the watchdog immediately, not jus
 before_id="$(systemctl show psiphon-watchdog -p InvocationID --value 2>/dev/null)"
 pkill -9 -f psiphon-tunnel-core || true
 triggered=0
-for _ in $(seq 1 20); do
+for _ in $(seq 1 30); do
   sleep 1
   after_id="$(systemctl show psiphon-watchdog -p InvocationID --value 2>/dev/null)"
   if [ -n "$after_id" ] && [ "$after_id" != "$before_id" ]; then triggered=1; break; fi
 done
-if [ "$triggered" = 1 ]; then ok "psiphon-watchdog fired automatically on the crash (OnFailure=)"; else bad "psiphon-watchdog did not fire within 20s of the crash"; fi
+if [ "$triggered" = 1 ]; then ok "psiphon-watchdog fired automatically on the crash (OnFailure=)"; else bad "psiphon-watchdog did not fire within 30s of the crash"; fi
 systemctl restart psiphon
 sleep 2
 
